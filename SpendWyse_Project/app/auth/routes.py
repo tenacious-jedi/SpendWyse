@@ -1,4 +1,5 @@
-from flask import request, jsonify
+from datetime import datetime, timezone, timedelta
+from flask import request, jsonify, current_app
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
@@ -8,6 +9,7 @@ from flask_jwt_extended import (
 )
 from app.extensions import db, jwt_blocklist
 from app.models import User
+from app.models.user import SubscriptionTier, TRIAL_DAYS
 from . import auth_bp
 
 
@@ -41,9 +43,23 @@ def signup():
         email=email,
         first_name=data["first_name"].strip(),
         last_name=data["last_name"].strip(),
+        subscription_tier=SubscriptionTier.free_trial,
+        trial_ends_at=datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS),
     )
     user.set_password(data["password"])
     db.session.add(user)
+    db.session.flush()  # get user.id before Stripe call
+
+    try:
+        from app.subscriptions.stripe_client import create_customer
+        stripe_customer_id = create_customer(
+            email=user.email,
+            name=f"{user.first_name} {user.last_name}",
+        )
+        user.stripe_customer_id = stripe_customer_id
+    except Exception:
+        pass  # Stripe failure must not block account creation
+
     db.session.commit()
 
     access_token = create_access_token(identity=str(user.id))

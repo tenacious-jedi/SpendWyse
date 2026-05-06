@@ -39,12 +39,14 @@ def create_app():
     from app.transactions import transactions_bp
     from app.budgets import budgets_bp
     from app.plaid import plaid_bp
+    from app.subscriptions import subscriptions_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(transactions_bp)
     app.register_blueprint(budgets_bp)
     app.register_blueprint(plaid_bp)
+    app.register_blueprint(subscriptions_bp)
 
-    from app.models import User  # noqa: F401
+    from app.models import User, Subscription, Team, TeamMember  # noqa: F401
 
     return app
