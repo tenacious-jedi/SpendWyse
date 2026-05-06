@@ -1,13 +1,17 @@
 import enum
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.extensions import db
 
+TRIAL_DAYS = 30
+
 
 class SubscriptionTier(enum.Enum):
-    free = "free"
-    pro = "pro"
-    enterprise = "enterprise"
+    free_trial = "free_trial"
+    free_readonly = "free_readonly"
+    individual_monthly = "individual_monthly"
+    individual_yearly = "individual_yearly"
+    team = "team"
 
 
 class User(db.Model):
@@ -21,8 +25,10 @@ class User(db.Model):
     subscription_tier = db.Column(
         db.Enum(SubscriptionTier),
         nullable=False,
-        default=SubscriptionTier.free,
+        default=SubscriptionTier.free_trial,
     )
+    stripe_customer_id = db.Column(db.String(255), unique=True, nullable=True)
+    trial_ends_at = db.Column(db.DateTime(timezone=True), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(
         db.DateTime(timezone=True),
@@ -36,6 +42,21 @@ class User(db.Model):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
+    subscription = db.relationship(
+        "Subscription", back_populates="user", uselist=False
+    )
+
+    @property
+    def effective_tier(self) -> SubscriptionTier:
+        """Returns free_readonly once the trial window has closed."""
+        if (
+            self.subscription_tier == SubscriptionTier.free_trial
+            and self.trial_ends_at
+            and datetime.now(timezone.utc) > self.trial_ends_at
+        ):
+            return SubscriptionTier.free_readonly
+        return self.subscription_tier
+
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
 
@@ -48,7 +69,8 @@ class User(db.Model):
             "email": self.email,
             "first_name": self.first_name,
             "last_name": self.last_name,
-            "subscription_tier": self.subscription_tier.value,
+            "subscription_tier": self.effective_tier.value,
+            "trial_ends_at": self.trial_ends_at.isoformat() if self.trial_ends_at else None,
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat(),
         }

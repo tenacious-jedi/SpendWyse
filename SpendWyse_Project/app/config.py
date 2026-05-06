@@ -24,6 +24,14 @@ class Config:
     PLAID_SECRET = os.getenv("PLAID_SECRET", "")
     PLAID_ENV = os.getenv("PLAID_ENV", "sandbox")
 
+    STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
+    STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    STRIPE_PRICE_INDIVIDUAL_MONTHLY = os.getenv("STRIPE_PRICE_INDIVIDUAL_MONTHLY", "")
+    STRIPE_PRICE_INDIVIDUAL_YEARLY = os.getenv("STRIPE_PRICE_INDIVIDUAL_YEARLY", "")
+    STRIPE_PRICE_TEAM = os.getenv("STRIPE_PRICE_TEAM", "")
+    STRIPE_SUCCESS_URL = os.getenv("STRIPE_SUCCESS_URL", "http://localhost:3000/subscription/success")
+    STRIPE_CANCEL_URL = os.getenv("STRIPE_CANCEL_URL", "http://localhost:3000/subscription/cancel")
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
