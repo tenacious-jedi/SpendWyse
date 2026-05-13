@@ -47,6 +47,6 @@ def create_app():
     app.register_blueprint(plaid_bp)
     app.register_blueprint(subscriptions_bp)
 
-    from app.models import User, Subscription, Team, TeamMember  # noqa: F401
+    from app.models import User, Subscription, Team, TeamMember, Transaction  # noqa: F401
 
     return app
