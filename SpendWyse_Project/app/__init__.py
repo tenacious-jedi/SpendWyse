@@ -47,6 +47,14 @@ def create_app():
     app.register_blueprint(plaid_bp)
     app.register_blueprint(subscriptions_bp)
 
-    from app.models import User, Subscription, Team, TeamMember, Transaction  # noqa: F401
+    from app.models import (  # noqa: F401
+        User,
+        Subscription,
+        Team,
+        TeamMember,
+        Transaction,
+        PlaidItem,
+        Tag,
+    )
 
     return app
