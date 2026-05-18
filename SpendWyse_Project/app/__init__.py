@@ -55,6 +55,8 @@ def create_app():
         Transaction,
         PlaidItem,
         Tag,
+        TagRule,
+        SpendCap,
     )
 
     return app

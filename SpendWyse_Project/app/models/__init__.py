@@ -4,6 +4,8 @@ from .team import Team, TeamMember
 from .transaction import Transaction
 from .plaid_item import PlaidItem
 from .tag import Tag
+from .tag_rule import TagRule
+from .spend_cap import SpendCap
 
 __all__ = [
     "User",
@@ -13,4 +15,6 @@ __all__ = [
     "Transaction",
     "PlaidItem",
     "Tag",
+    "TagRule",
+    "SpendCap",
 ]
