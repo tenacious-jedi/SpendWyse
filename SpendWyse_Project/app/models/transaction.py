@@ -31,6 +31,8 @@ class Transaction(db.Model):
     source = db.Column(db.Enum(TransactionSource), nullable=False, default=TransactionSource.manual)
     plaid_transaction_id = db.Column(db.String(255), unique=True, nullable=True)
 
+    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=True, index=True)
+
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(
         db.DateTime(timezone=True),
@@ -57,6 +59,7 @@ class Transaction(db.Model):
             "notes": self.notes,
             "transaction_date": self.transaction_date.isoformat(),
             "source": self.source.value,
+            "tag_id": self.tag_id,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }

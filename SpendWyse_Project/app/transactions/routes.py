@@ -5,6 +5,7 @@ from sqlalchemy import and_
 
 from app.extensions import db
 from app.models.transaction import Transaction, TransactionSource, TransactionType
+from app.tags.rule_engine import apply_rules
 from app.utils.decorators import require_tier
 from . import transactions_bp
 
@@ -127,6 +128,10 @@ def create_transaction():
         transaction_date=transaction_date,
         source=TransactionSource.manual,
     )
+
+    explicit_tag = data.get("tag_id")
+    txn.tag_id = explicit_tag if explicit_tag is not None else apply_rules(user_id, txn)
+
     db.session.add(txn)
     db.session.commit()
 
