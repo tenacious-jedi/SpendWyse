@@ -14,8 +14,12 @@ class TagRule(db.Model):
     __tablename__ = "tag_rules"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
-    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=False, index=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tag_id = db.Column(
+        db.Integer, db.ForeignKey("tags.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     match_type = db.Column(db.Enum(RuleMatchType), nullable=False)
     match_value = db.Column(db.String(255), nullable=False)

@@ -9,8 +9,12 @@ class Tag(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
-    parent_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=True, index=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    parent_id = db.Column(
+        db.Integer, db.ForeignKey("tags.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     name = db.Column(db.String(100), nullable=False)
     color = db.Column(db.String(7), nullable=True)

@@ -1,15 +1,20 @@
 from datetime import datetime, timezone
 from app.extensions import db
+from app.utils.crypto import decrypt_token, encrypt_token
 
 
 class PlaidItem(db.Model):
     __tablename__ = "plaid_items"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     plaid_item_id = db.Column(db.String(255), unique=True, nullable=False)
-    access_token = db.Column(db.Text, nullable=False)
+    # Encrypted at rest with Fernet; access via the `access_token` property.
+    # Construct without it, then assign: pit = PlaidItem(...); pit.access_token = "..."
+    access_token_encrypted = db.Column(db.Text, nullable=False)
     institution_id = db.Column(db.String(100), nullable=True)
     institution_name = db.Column(db.String(255), nullable=True)
     cursor = db.Column(db.Text, nullable=True)
@@ -29,6 +34,14 @@ class PlaidItem(db.Model):
     )
 
     user = db.relationship("User", backref=db.backref("plaid_items", lazy="dynamic"))
+
+    @property
+    def access_token(self) -> str:
+        return decrypt_token(self.access_token_encrypted)
+
+    @access_token.setter
+    def access_token(self, value: str) -> None:
+        self.access_token_encrypted = encrypt_token(value)
 
     def to_dict(self) -> dict:
         return {

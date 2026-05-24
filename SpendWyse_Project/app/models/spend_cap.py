@@ -16,8 +16,12 @@ class SpendCap(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
-    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=False, index=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tag_id = db.Column(
+        db.Integer, db.ForeignKey("tags.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     period = db.Column(db.Enum(CapPeriod), nullable=False, default=CapPeriod.monthly)
     limit_amount = db.Column(db.Numeric(12, 2), nullable=False)
