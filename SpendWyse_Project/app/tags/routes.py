@@ -6,6 +6,7 @@ from app.extensions import db
 from app.models.tag import Tag
 from app.models.tag_rule import TagRule, RuleMatchType
 from app.models.spend_cap import SpendCap, CapPeriod
+from app.tags.cap_evaluator import evaluate_cap, evaluate_all_for_user
 from app.utils.decorators import require_tier
 from . import tags_bp, tag_rules_bp, spend_caps_bp
 
@@ -32,6 +33,29 @@ def _uid() -> int:
     return int(get_jwt_identity())
 
 
+def _parent_creates_cycle(tag_id: int, proposed_parent_id, user_id: int) -> bool:
+    """Walk up from the proposed parent; return True if `tag_id` appears.
+
+    Also catches self-parenting and corrupted chains (defensive ceiling).
+    """
+    if proposed_parent_id is None:
+        return False
+    if proposed_parent_id == tag_id:
+        return True
+
+    visited = set()
+    current_id = proposed_parent_id
+    while current_id is not None:
+        if current_id == tag_id or current_id in visited:
+            return True
+        visited.add(current_id)
+        parent = Tag.query.filter_by(id=current_id, user_id=user_id).first()
+        if parent is None:
+            return False
+        current_id = parent.parent_id
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Tags
 # ---------------------------------------------------------------------------
@@ -50,11 +74,17 @@ def create_tag():
     if not name:
         return _error("name is required", 400)
 
+    parent_id = data.get("parent_id")
+    if parent_id is not None:
+        parent = Tag.query.filter_by(id=parent_id, user_id=_uid()).first()
+        if not parent:
+            return _error("parent_id does not refer to a tag you own", 400)
+
     tag = Tag(
         user_id=_uid(),
         name=name,
         color=data.get("color"),
-        parent_id=data.get("parent_id"),
+        parent_id=parent_id,
         is_default=bool(data.get("is_default", False)),
         plaid_pfc_key=data.get("plaid_pfc_key"),
     )
@@ -75,7 +105,18 @@ def update_tag(tag_id: int):
         return _error("tag not found", 404)
 
     data = request.get_json(silent=True) or {}
-    for field in ("name", "color", "parent_id", "plaid_pfc_key"):
+
+    if "parent_id" in data:
+        new_parent = data["parent_id"]
+        if new_parent is not None:
+            parent = Tag.query.filter_by(id=new_parent, user_id=_uid()).first()
+            if not parent:
+                return _error("parent_id does not refer to a tag you own", 400)
+        if _parent_creates_cycle(tag.id, new_parent, _uid()):
+            return _error("parent_id would create a cycle", 400)
+        tag.parent_id = new_parent
+
+    for field in ("name", "color", "plaid_pfc_key"):
         if field in data:
             setattr(tag, field, data[field])
     if "is_default" in data:
@@ -209,6 +250,21 @@ def delete_rule(rule_id: int):
 def list_caps():
     caps = SpendCap.query.filter_by(user_id=_uid()).all()
     return jsonify({"caps": [c.to_dict() for c in caps]}), 200
+
+
+@spend_caps_bp.get("/status")
+@require_tier(*ALL_TIERS)
+def caps_status_all():
+    return jsonify({"caps": evaluate_all_for_user(_uid())}), 200
+
+
+@spend_caps_bp.get("/<int:cap_id>/status")
+@require_tier(*ALL_TIERS)
+def cap_status_one(cap_id: int):
+    cap = SpendCap.query.filter_by(id=cap_id, user_id=_uid()).first()
+    if not cap:
+        return _error("cap not found", 404)
+    return jsonify({"cap": evaluate_cap(cap)}), 200
 
 
 @spend_caps_bp.post("/")

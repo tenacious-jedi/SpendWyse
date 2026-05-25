@@ -45,6 +45,8 @@ class TeamMember(db.Model):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+    # Soft-delete: set when the member leaves; active membership = NULL.
+    left_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     team = db.relationship("Team", back_populates="members")
     user = db.relationship("User")

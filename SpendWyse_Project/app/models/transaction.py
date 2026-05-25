@@ -24,6 +24,8 @@ class Transaction(db.Model):
     transaction_type = db.Column(db.Enum(TransactionType), nullable=False, default=TransactionType.debit)
 
     merchant = db.Column(db.String(255), nullable=True)
+    # Free-text label (e.g. raw Plaid category, user note). Structured tagging
+    # lives on `tag_id`; this stays as an optional supplement / fallback.
     category = db.Column(db.String(100), nullable=True)
     notes = db.Column(db.Text, nullable=True)
     transaction_date = db.Column(db.Date, nullable=False)
@@ -31,7 +33,9 @@ class Transaction(db.Model):
     source = db.Column(db.Enum(TransactionSource), nullable=False, default=TransactionSource.manual)
     plaid_transaction_id = db.Column(db.String(255), unique=True, nullable=True)
 
-    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=True, index=True)
+    tag_id = db.Column(
+        db.Integer, db.ForeignKey("tags.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(
