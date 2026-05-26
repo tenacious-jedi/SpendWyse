@@ -1,3 +1,6 @@
+#This defines the multi-user "team" plan — how multiple users share a single SpendWyse account under the team subscription tier
+#author- manishap
+
 import enum
 from datetime import datetime, timezone
 from app.extensions import db
