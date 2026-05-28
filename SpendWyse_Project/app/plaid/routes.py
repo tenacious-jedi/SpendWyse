@@ -1,34 +1,151 @@
-from flask import jsonify
-from flask_jwt_extended import jwt_required
+from flask import request, jsonify
+from flask_jwt_extended import get_jwt_identity
+
+import plaid
+from plaid.model.accounts_get_request import AccountsGetRequest
+from plaid.model.country_code import CountryCode
+from plaid.model.item_public_token_exchange_request import (
+    ItemPublicTokenExchangeRequest,
+)
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.products import Products
+
+from app.extensions import db
+from app.models.plaid_item import PlaidItem
+from app.utils.decorators import require_tier
 from . import plaid_bp
+from .plaid_client import get_plaid_client
+from .sync_service import sync_item
+
+
+ALL_TIERS = (
+    "free_trial",
+    "free_readonly",
+    "individual_monthly",
+    "individual_yearly",
+    "team",
+)
+WRITE_TIERS = (
+    "free_trial",
+    "individual_monthly",
+    "individual_yearly",
+    "team",
+)
+
+
+def _error(message: str, status: int):
+    return jsonify({"error": message}), status
+
+
+def _uid() -> int:
+    return int(get_jwt_identity())
+
+
+def _plaid_error(exc: plaid.ApiException):
+    # Plaid returns a JSON body in `exc.body`; surface its error_code to the client.
+    return jsonify({
+        "error": "plaid api error",
+        "details": getattr(exc, "body", None),
+    }), 502
 
 
 @plaid_bp.post("/link/token")
-@jwt_required()
+@require_tier(*WRITE_TIERS)
 def create_link_token():
-    # TODO: call Plaid /link/token/create and return the link_token to the client
-    # The client uses this token to open Plaid Link in the browser
-    return jsonify({"message": "not yet implemented"}), 501
+    user_id = _uid()
+    try:
+        req = LinkTokenCreateRequest(
+            user=LinkTokenCreateRequestUser(client_user_id=str(user_id)),
+            client_name="SpendWyse",
+            products=[Products("transactions")],
+            country_codes=[CountryCode("US")],
+            language="en",
+        )
+        resp = get_plaid_client().link_token_create(req)
+    except plaid.ApiException as exc:
+        return _plaid_error(exc)
+
+    return jsonify({"link_token": resp.link_token, "expiration": resp.expiration.isoformat()}), 200
 
 
 @plaid_bp.post("/link/exchange")
-@jwt_required()
+@require_tier(*WRITE_TIERS)
 def exchange_public_token():
-    # TODO: exchange the public_token from Plaid Link for a permanent access_token
-    # Store the access_token encrypted against the user record
-    return jsonify({"message": "not yet implemented"}), 501
+    data = request.get_json(silent=True) or {}
+    public_token = data.get("public_token")
+    if not public_token:
+        return _error("public_token is required", 400)
+
+    try:
+        resp = get_plaid_client().item_public_token_exchange(
+            ItemPublicTokenExchangeRequest(public_token=public_token)
+        )
+    except plaid.ApiException as exc:
+        return _plaid_error(exc)
+
+    existing = PlaidItem.query.filter_by(plaid_item_id=resp.item_id).first()
+    if existing:
+        return _error("this bank is already linked", 409)
+
+    pit = PlaidItem(
+        user_id=_uid(),
+        plaid_item_id=resp.item_id,
+        institution_id=data.get("institution_id"),
+        institution_name=data.get("institution_name"),
+    )
+    pit.access_token = resp.access_token  # setter encrypts before storing
+    db.session.add(pit)
+    db.session.commit()
+
+    return jsonify({"plaid_item": pit.to_dict()}), 201
 
 
 @plaid_bp.post("/sync")
-@jwt_required()
+@require_tier(*WRITE_TIERS)
 def sync_transactions():
-    # TODO: call Plaid /transactions/sync to pull new/modified/removed transactions
-    # Upsert results into the transactions table
-    return jsonify({"message": "not yet implemented"}), 501
+    items = PlaidItem.query.filter_by(user_id=_uid(), is_active=True).all()
+    if not items:
+        return jsonify({"synced": [], "message": "no linked banks"}), 200
+
+    results = []
+    for item in items:
+        try:
+            results.append(sync_item(item))
+        except plaid.ApiException as exc:
+            db.session.rollback()
+            results.append({
+                "plaid_item_id": item.id,
+                "error": "plaid api error",
+                "details": getattr(exc, "body", None),
+            })
+
+    return jsonify({"synced": results}), 200
 
 
 @plaid_bp.get("/accounts")
-@jwt_required()
+@require_tier(*ALL_TIERS)
 def list_accounts():
-    # TODO: call Plaid /accounts/get and return linked bank accounts
-    return jsonify({"accounts": [], "message": "not yet implemented"}), 200
+    items = PlaidItem.query.filter_by(user_id=_uid(), is_active=True).all()
+
+    accounts = []
+    for item in items:
+        try:
+            resp = get_plaid_client().accounts_get(
+                AccountsGetRequest(access_token=item.access_token)
+            )
+        except plaid.ApiException as exc:
+            return _plaid_error(exc)
+
+        for acct in resp.accounts:
+            accounts.append({
+                "account_id": acct.account_id,
+                "name": acct.name,
+                "mask": acct.mask,
+                "type": str(acct.type),
+                "subtype": str(acct.subtype) if acct.subtype else None,
+                "institution_name": item.institution_name,
+                "plaid_item_id": item.id,
+            })
+
+    return jsonify({"accounts": accounts}), 200
