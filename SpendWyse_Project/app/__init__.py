@@ -41,6 +41,7 @@ def create_app():
     from app.plaid import plaid_bp
     from app.subscriptions import subscriptions_bp
     from app.tags import tags_bp, tag_rules_bp, spend_caps_bp
+    from app.alerts import alerts_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(transactions_bp)
@@ -50,6 +51,7 @@ def create_app():
     app.register_blueprint(tags_bp)
     app.register_blueprint(tag_rules_bp)
     app.register_blueprint(spend_caps_bp)
+    app.register_blueprint(alerts_bp)
 
     from app.models import (  # noqa: F401
         User,
@@ -61,6 +63,7 @@ def create_app():
         Tag,
         TagRule,
         SpendCap,
+        Alert,
     )
 
     return app

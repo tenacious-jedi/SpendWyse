@@ -6,6 +6,7 @@ from .plaid_item import PlaidItem
 from .tag import Tag
 from .tag_rule import TagRule
 from .spend_cap import SpendCap
+from .alert import Alert
 
 __all__ = [
     "User",
@@ -17,4 +18,5 @@ __all__ = [
     "Tag",
     "TagRule",
     "SpendCap",
+    "Alert",
 ]

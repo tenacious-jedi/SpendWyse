@@ -1,4 +1,4 @@
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 from flask_jwt_extended import get_jwt_identity
 
 import plaid
@@ -13,6 +13,7 @@ from plaid.model.products import Products
 
 from app.extensions import db
 from app.models.plaid_item import PlaidItem
+from app.tags.alert_service import check_caps_and_notify
 from app.utils.decorators import require_tier
 from . import plaid_bp
 from .plaid_client import get_plaid_client
@@ -119,6 +120,11 @@ def sync_transactions():
                 "error": "plaid api error",
                 "details": getattr(exc, "body", None),
             })
+
+    try:
+        check_caps_and_notify(_uid())
+    except Exception:
+        current_app.logger.exception("cap alert check failed after sync")
 
     return jsonify({"synced": results}), 200
 

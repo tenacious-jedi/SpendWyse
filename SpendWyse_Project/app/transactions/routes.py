@@ -1,10 +1,11 @@
 from datetime import date
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import and_
 
 from app.extensions import db
 from app.models.transaction import Transaction, TransactionSource, TransactionType
+from app.tags.alert_service import check_caps_and_notify
 from app.tags.rule_engine import apply_rules
 from app.utils.decorators import require_tier
 from . import transactions_bp
@@ -134,6 +135,12 @@ def create_transaction():
 
     db.session.add(txn)
     db.session.commit()
+
+    if txn.tag_id is not None:
+        try:
+            check_caps_and_notify(user_id, only_tag_id=txn.tag_id)
+        except Exception:
+            current_app.logger.exception("cap alert check failed after txn %s", txn.id)
 
     return jsonify({"transaction": txn.to_dict()}), 201
 
