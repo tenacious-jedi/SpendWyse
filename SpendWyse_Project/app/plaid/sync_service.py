@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
+from app.events.publisher import publish
+from app.events.schema import TRANSACTION_TAGGED
 from app.extensions import db
 from app.models.plaid_item import PlaidItem
 from app.models.transaction import Transaction, TransactionSource, TransactionType
@@ -29,12 +31,15 @@ def sync_item(plaid_item: PlaidItem) -> dict:
         )
         resp = client.transactions_sync(req)
 
+        tagged_this_page: list[Transaction] = []
+
         for plaid_txn in resp.added:
             txn = _to_transaction(plaid_txn, plaid_item.user_id)
             tag_id = apply_rules(plaid_item.user_id, txn)
             if tag_id:
                 txn.tag_id = tag_id
                 tagged += 1
+                tagged_this_page.append(txn)
             db.session.add(txn)
             added += 1
 
@@ -61,6 +66,18 @@ def sync_item(plaid_item: PlaidItem) -> dict:
         plaid_item.cursor = cursor
         plaid_item.last_synced_at = datetime.now(timezone.utc)
         db.session.commit()
+
+        # Publish only after commit so we never announce a row that didn't land.
+        for txn in tagged_this_page:
+            publish(
+                TRANSACTION_TAGGED,
+                {
+                    "user_id": txn.user_id,
+                    "transaction_id": txn.id,
+                    "tag_id": txn.tag_id,
+                },
+                key=str(txn.user_id),
+            )
 
     return {
         "plaid_item_id": plaid_item.id,

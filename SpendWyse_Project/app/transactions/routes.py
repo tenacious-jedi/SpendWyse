@@ -3,9 +3,10 @@ from flask import request, jsonify, current_app
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import and_
 
+from app.events.publisher import publish
+from app.events.schema import TRANSACTION_TAGGED
 from app.extensions import db
 from app.models.transaction import Transaction, TransactionSource, TransactionType
-from app.tags.alert_service import check_caps_and_notify
 from app.tags.rule_engine import apply_rules
 from app.utils.decorators import require_tier
 from . import transactions_bp
@@ -137,10 +138,15 @@ def create_transaction():
     db.session.commit()
 
     if txn.tag_id is not None:
-        try:
-            check_caps_and_notify(user_id, only_tag_id=txn.tag_id)
-        except Exception:
-            current_app.logger.exception("cap alert check failed after txn %s", txn.id)
+        publish(
+            TRANSACTION_TAGGED,
+            {
+                "user_id": user_id,
+                "transaction_id": txn.id,
+                "tag_id": txn.tag_id,
+            },
+            key=str(user_id),
+        )
 
     return jsonify({"transaction": txn.to_dict()}), 201
 

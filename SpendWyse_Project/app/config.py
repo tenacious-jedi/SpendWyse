@@ -40,6 +40,9 @@ class Config:
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM = os.getenv("SMTP_FROM", "")
 
+    KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "")
+    KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "spendwyse-alerts")
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
