@@ -48,7 +48,8 @@ def signup():
     )
     user.set_password(data["password"])
     db.session.add(user)
-    db.session.flush()  # get user.id before Stripe call
+    # Get user.id before the Stripe call.
+    db.session.flush()
 
     try:
         from app.subscriptions.stripe_client import create_customer
@@ -58,7 +59,8 @@ def signup():
         )
         user.stripe_customer_id = stripe_customer_id
     except Exception:
-        pass  # Stripe failure must not block account creation
+        # Stripe failure must not block account creation.
+        pass
 
     db.session.commit()
 
