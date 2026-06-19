@@ -7,6 +7,7 @@ from plaid.model.country_code import CountryCode
 from plaid.model.item_public_token_exchange_request import (
     ItemPublicTokenExchangeRequest,
 )
+from plaid.model.item_remove_request import ItemRemoveRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.products import Products
@@ -150,3 +151,56 @@ def list_accounts():
             })
 
     return jsonify({"accounts": accounts}), 200
+
+
+@plaid_bp.get("/items")
+@require_tier(*ALL_TIERS)
+def list_items():
+    items = (
+        PlaidItem.query
+        .filter_by(user_id=_uid())
+        .order_by(PlaidItem.created_at.desc())
+        .all()
+    )
+    return jsonify({"items": [item.to_dict() for item in items]}), 200
+
+
+@plaid_bp.delete("/items/<int:item_id>")
+@require_tier(*WRITE_TIERS)
+def delete_item(item_id: int):
+    item = PlaidItem.query.filter_by(id=item_id, user_id=_uid()).first()
+    if not item:
+        return _error("plaid item not found", 404)
+
+    try:
+        get_plaid_client().item_remove(
+            ItemRemoveRequest(access_token=item.access_token)
+        )
+    except plaid.ApiException as exc:
+        body = getattr(exc, "body", "") or ""
+        # If Plaid says the item is already gone, treat the local delete
+        # as the user-visible success path.
+        if "ITEM_NOT_FOUND" not in str(body):
+            return _plaid_error(exc)
+
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify({"message": "plaid item removed"}), 200
+
+
+@plaid_bp.post("/items/<int:item_id>/sync")
+@require_tier(*WRITE_TIERS)
+def sync_one_item(item_id: int):
+    item = PlaidItem.query.filter_by(
+        id=item_id, user_id=_uid(), is_active=True
+    ).first()
+    if not item:
+        return _error("plaid item not found", 404)
+
+    try:
+        result = sync_item(item)
+    except plaid.ApiException as exc:
+        db.session.rollback()
+        return _plaid_error(exc)
+
+    return jsonify({"synced": result}), 200
