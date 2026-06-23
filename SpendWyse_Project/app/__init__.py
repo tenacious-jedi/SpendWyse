@@ -66,6 +66,7 @@ def create_app():
         TagRule,
         SpendCap,
         Alert,
+        PasswordResetToken,
     )
 
     return app
