@@ -37,7 +37,6 @@ def create_app():
 
     from app.auth import auth_bp
     from app.transactions import transactions_bp
-    from app.budgets import budgets_bp
     from app.plaid import plaid_bp
     from app.subscriptions import subscriptions_bp
     from app.tags import tags_bp, tag_rules_bp, spend_caps_bp
@@ -46,7 +45,6 @@ def create_app():
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(transactions_bp)
-    app.register_blueprint(budgets_bp)
     app.register_blueprint(plaid_bp)
     app.register_blueprint(subscriptions_bp)
     app.register_blueprint(tags_bp)
