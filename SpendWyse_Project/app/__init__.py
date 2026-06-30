@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_cors import CORS
 from app.config import get_config
 from app.extensions import db, migrate, jwt, jwt_blocklist
 
@@ -10,6 +11,14 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+
+    # Restrict to known frontend origins; never use "*" with JWT or credentials.
+    CORS(
+        app,
+        origins=app.config["CORS_ALLOWED_ORIGINS"],
+        allow_headers=["Authorization", "Content-Type"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    )
 
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):
