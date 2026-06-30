@@ -43,6 +43,7 @@ def create_app():
     from app.alerts import alerts_bp
     from app.reports import reports_bp
     from app.recurring import recurring_bp
+    from app.agents import agents_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(transactions_bp)
@@ -54,6 +55,7 @@ def create_app():
     app.register_blueprint(alerts_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(recurring_bp)
+    app.register_blueprint(agents_bp)
 
     from app.models import (  # noqa: F401
         User,
