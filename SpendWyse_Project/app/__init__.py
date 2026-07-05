@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from app.config import get_config
-from app.extensions import db, migrate, jwt, jwt_blocklist
+from app.extensions import db, migrate, jwt, jwt_blocklist, limiter
 
 
 def create_app():
@@ -11,6 +11,7 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+    limiter.init_app(app)
 
     # Restrict to known frontend origins; never use "*" with JWT or credentials.
     CORS(

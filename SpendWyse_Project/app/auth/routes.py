@@ -7,7 +7,7 @@ from flask_jwt_extended import (
     get_jwt,
     get_jwt_identity,
 )
-from app.extensions import db, jwt_blocklist
+from app.extensions import db, jwt_blocklist, limiter
 from app.models import User
 from app.models.user import SubscriptionTier, TRIAL_DAYS
 from app.utils.notifier import send_email
@@ -30,6 +30,7 @@ def _validate_signup_payload(data: dict):
 
 
 @auth_bp.post("/signup")
+@limiter.limit("3 per minute")
 def signup():
     data = request.get_json(silent=True) or {}
 
@@ -77,6 +78,7 @@ def signup():
 
 
 @auth_bp.post("/login")
+@limiter.limit("5 per minute")
 def login():
     data = request.get_json(silent=True) or {}
     email = data.get("email", "").lower().strip()
@@ -196,6 +198,7 @@ def change_password():
 
 
 @auth_bp.post("/forgot-password")
+@limiter.limit("3 per minute")
 def forgot_password():
     data = request.get_json(silent=True) or {}
     email = (data.get("email") or "").lower().strip()
@@ -230,6 +233,7 @@ def forgot_password():
 
 
 @auth_bp.post("/reset-password")
+@limiter.limit("5 per minute")
 def reset_password():
     data = request.get_json(silent=True) or {}
     token = (data.get("token") or "").strip()

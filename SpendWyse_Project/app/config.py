@@ -53,6 +53,9 @@ class Config:
         if origin.strip()
     ]
 
+    RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+    RATELIMIT_HEADERS_ENABLED = True
+
 
 class DevelopmentConfig(Config):
     DEBUG = True
