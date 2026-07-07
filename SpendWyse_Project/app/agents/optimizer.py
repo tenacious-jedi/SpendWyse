@@ -3,6 +3,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
+from sqlalchemy import func
+
 from app.extensions import db
 from app.models.transaction import Transaction, TransactionType
 from app.recurring.detector import detect_recurring
@@ -118,6 +120,9 @@ def _find_trial_conversions(user_id: int, subs: list[dict], lookback_days: int) 
         merchant = s["merchant"]
         if not merchant:
             continue
+        # Case-insensitive match: the recurring detector groups by
+        # lowercased merchant name, so the raw string here may not
+        # match rows stored with different casing (Plaid varies).
         first = (
             Transaction.query
             .filter(
@@ -125,7 +130,7 @@ def _find_trial_conversions(user_id: int, subs: list[dict], lookback_days: int) 
                 Transaction.transaction_type == TransactionType.debit,
                 Transaction.is_deleted == False,  # noqa: E712
                 Transaction.transaction_date >= cutoff,
-                Transaction.merchant == merchant,
+                func.lower(Transaction.merchant) == merchant.lower(),
             )
             .order_by(Transaction.transaction_date.asc())
             .first()
