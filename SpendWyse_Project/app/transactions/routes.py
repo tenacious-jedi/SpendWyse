@@ -122,11 +122,11 @@ def create_transaction():
     txn = Transaction(
         user_id=user_id,
         amount=amount,
-        currency=data.get("currency", "USD").upper()[:3],
+        currency=(data.get("currency") or "USD").upper()[:3],
         transaction_type=TransactionType[txn_type_raw],
-        merchant=data.get("merchant", "").strip() or None,
-        category=data.get("category", "").strip() or None,
-        notes=data.get("notes", "").strip() or None,
+        merchant=(data.get("merchant") or "").strip() or None,
+        category=(data.get("category") or "").strip() or None,
+        notes=(data.get("notes") or "").strip() or None,
         transaction_date=transaction_date,
         source=TransactionSource.manual,
     )
