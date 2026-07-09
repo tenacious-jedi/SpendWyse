@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from flask import request, jsonify
 from flask_jwt_extended import get_jwt_identity
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models.tag import Tag
@@ -91,7 +92,7 @@ def create_tag():
     db.session.add(tag)
     try:
         db.session.commit()
-    except Exception:
+    except IntegrityError:
         db.session.rollback()
         return _error("tag with that name already exists", 409)
     return jsonify({"tag": tag.to_dict()}), 201
@@ -305,7 +306,7 @@ def create_cap():
     db.session.add(cap)
     try:
         db.session.commit()
-    except Exception:
+    except IntegrityError:
         db.session.rollback()
         return _error("a cap for this tag and period already exists", 409)
     return jsonify({"cap": cap.to_dict()}), 201
