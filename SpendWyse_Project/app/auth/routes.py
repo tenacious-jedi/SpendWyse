@@ -22,7 +22,7 @@ def _error(message: str, status: int):
 def _validate_signup_payload(data: dict):
     required = ["email", "password", "first_name", "last_name"]
     for field in required:
-        if not data.get(field, "").strip():
+        if not (data.get(field) or "").strip():
             return f"{field} is required"
     if len(data["password"]) < 8:
         return "password must be at least 8 characters"
@@ -81,8 +81,8 @@ def signup():
 @limiter.limit("5 per minute")
 def login():
     data = request.get_json(silent=True) or {}
-    email = data.get("email", "").lower().strip()
-    password = data.get("password", "")
+    email = (data.get("email") or "").lower().strip()
+    password = data.get("password") or ""
 
     if not email or not password:
         return _error("email and password are required", 400)
