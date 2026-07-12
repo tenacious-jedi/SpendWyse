@@ -16,6 +16,7 @@ ANNUAL_RENEWAL_WINDOW_DAYS = 60
 TRIAL_FIRST_CHARGE_MAX = Decimal("1.00")
 TRIAL_MIN_LATER_RATIO = Decimal("3")
 CATEGORY_HEAVY_THRESHOLD = Decimal("0.5")
+PRICE_INCREASE_THRESHOLD = Decimal("1.10")
 
 # Merchant patterns that hide the real service behind a payment processor.
 PROCESSOR_PATTERNS = [
@@ -49,6 +50,7 @@ def run_audit(user_id: int, lookback_days: int = 365) -> dict:
     issues.extend(_find_upcoming_annual_renewals(enriched))
     issues.extend(_find_suspicious_merchants(enriched))
     issues.extend(_find_category_heavy(by_category, monthly_burn))
+    issues.extend(_find_price_increases(enriched))
 
     return {
         "summary": {
@@ -228,4 +230,37 @@ def _find_category_heavy(
                     f"{(share * 100).quantize(Decimal('0.1'))}% of your subscription burn."
                 ),
             })
+    return issues
+
+
+def _find_price_increases(subs: list[dict]) -> list[dict]:
+    issues = []
+    for s in subs:
+        try:
+            low = Decimal(s["min_amount"])
+            high = Decimal(s["max_amount"])
+        except (KeyError, ValueError):
+            continue
+        if low <= 0 or high <= low:
+            continue
+        ratio = high / low
+        if ratio < PRICE_INCREASE_THRESHOLD:
+            continue
+
+        pct = ((ratio - Decimal("1")) * Decimal("100")).quantize(Decimal("0.1"))
+        issues.append({
+            "type": "price_increased",
+            "merchant": s["merchant"],
+            "cadence": s["cadence"],
+            "min_amount": str(low.quantize(Decimal("0.01"))),
+            "max_amount": str(high.quantize(Decimal("0.01"))),
+            "pct_increase": f"{pct}%",
+            "monthly_cost": s["monthly_cost"],
+            "currency": s.get("currency"),
+            "rationale": (
+                f"{s['merchant']} went from ${low.quantize(Decimal('0.01'))} to "
+                f"${high.quantize(Decimal('0.01'))} per {s['cadence'].rstrip('ly')} "
+                f"({pct}% increase)."
+            ),
+        })
     return issues
