@@ -123,7 +123,11 @@ def update_tag(tag_id: int):
     if "is_default" in data:
         tag.is_default = bool(data["is_default"])
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return _error("tag with that name already exists", 409)
     return jsonify({"tag": tag.to_dict()}), 200
 
 
@@ -348,7 +352,11 @@ def update_cap(cap_id: int):
     if "is_active" in data:
         cap.is_active = bool(data["is_active"])
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return _error("a cap for this tag and period already exists", 409)
     return jsonify({"cap": cap.to_dict()}), 200
 
 
