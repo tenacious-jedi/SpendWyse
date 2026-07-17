@@ -180,11 +180,17 @@ def update_transaction(transaction_id: int):
         return _error("plaid-imported transactions cannot be manually edited", 422)
 
     data = request.get_json(silent=True) or {}
-    updatable = ["merchant", "category", "notes", "currency"]
 
-    for field in updatable:
+    for field in ("merchant", "category", "notes"):
         if field in data:
-            setattr(txn, field, data[field])
+            value = (data[field] or "").strip()
+            setattr(txn, field, value or None)
+
+    if "currency" in data:
+        currency = (data["currency"] or "").strip().upper()[:3]
+        if not currency:
+            return _error("currency cannot be empty", 400)
+        txn.currency = currency
 
     if "amount" in data:
         try:
