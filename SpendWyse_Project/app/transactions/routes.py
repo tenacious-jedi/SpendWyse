@@ -50,9 +50,12 @@ def list_transactions():
     user_id = _get_current_user_id()
 
     page = max(1, request.args.get("page", 1, type=int))
-    page_size = min(
-        request.args.get("page_size", DEFAULT_PAGE_SIZE, type=int),
-        MAX_PAGE_SIZE,
+    page_size = max(
+        1,
+        min(
+            request.args.get("page_size", DEFAULT_PAGE_SIZE, type=int),
+            MAX_PAGE_SIZE,
+        ),
     )
 
     # Optional filters
