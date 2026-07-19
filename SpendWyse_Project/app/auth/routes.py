@@ -9,6 +9,7 @@ from flask_jwt_extended import (
 )
 from app.extensions import db, jwt_blocklist, limiter
 from app.models import User
+from app.models.alert import AlertLevel
 from app.models.user import SubscriptionTier, TRIAL_DAYS
 from app.utils.notifier import send_email
 from . import auth_bp
@@ -161,6 +162,15 @@ def update_me():
             if collision:
                 return _error("email already in use", 409)
             user.email = new_email
+
+    if "alerts_email_enabled" in data:
+        user.alerts_email_enabled = bool(data["alerts_email_enabled"])
+
+    if "alerts_email_min_level" in data:
+        raw_level = data["alerts_email_min_level"]
+        if raw_level not in {lvl.value for lvl in AlertLevel}:
+            return _error("alerts_email_min_level must be 'warn' or 'alert'", 400)
+        user.alerts_email_min_level = AlertLevel(raw_level)
 
     db.session.commit()
     return jsonify({"user": user.to_dict()}), 200

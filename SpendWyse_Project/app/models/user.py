@@ -2,6 +2,7 @@ import enum
 from datetime import datetime, timezone, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from app.extensions import db
+from app.models.alert import AlertLevel
 
 TRIAL_DAYS = 30
 
@@ -30,6 +31,10 @@ class User(db.Model):
     stripe_customer_id = db.Column(db.String(255), unique=True, nullable=True)
     trial_ends_at = db.Column(db.DateTime(timezone=True), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    alerts_email_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    alerts_email_min_level = db.Column(
+        db.Enum(AlertLevel), nullable=False, default=AlertLevel.warn
+    )
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
@@ -72,5 +77,7 @@ class User(db.Model):
             "subscription_tier": self.effective_tier.value,
             "trial_ends_at": self.trial_ends_at.isoformat() if self.trial_ends_at else None,
             "is_active": self.is_active,
+            "alerts_email_enabled": self.alerts_email_enabled,
+            "alerts_email_min_level": self.alerts_email_min_level.value,
             "created_at": self.created_at.isoformat(),
         }

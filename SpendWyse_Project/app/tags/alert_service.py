@@ -58,6 +58,16 @@ def check_caps_and_notify(user_id: int, only_tag_id: Optional[int] = None) -> li
             db.session.rollback()
             continue
 
+        if not _should_email(user, level):
+            actions.append({
+                "cap_id": cap.id,
+                "alert_id": alert.id,
+                "level": level.value,
+                "delivered": False,
+                "skipped_reason": "user_preferences",
+            })
+            continue
+
         tag = db.session.get(Tag, cap.tag_id)
         subject, body = _compose(user, tag, result, level)
         error = send_email(user.email, subject, body)
@@ -76,6 +86,16 @@ def check_caps_and_notify(user_id: int, only_tag_id: Optional[int] = None) -> li
         })
 
     return actions
+
+
+def _should_email(user: User, level: AlertLevel) -> bool:
+    if not user.alerts_email_enabled:
+        return False
+    # Two-value ordering: warn < alert. If the user's floor is `alert`, warn
+    # rows are still stored for in-app history but never emailed.
+    if user.alerts_email_min_level == AlertLevel.alert and level == AlertLevel.warn:
+        return False
+    return True
 
 
 def _already_alerted(user_id: int, cap_id: int, period_start: date, level: AlertLevel) -> bool:
