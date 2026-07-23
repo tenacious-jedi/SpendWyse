@@ -41,6 +41,7 @@ class Alert(db.Model):
 
     delivered_at = db.Column(db.DateTime(timezone=True), nullable=True)
     delivery_error = db.Column(db.Text, nullable=True)
+    read_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     created_at = db.Column(
         db.DateTime(timezone=True),
@@ -62,5 +63,6 @@ class Alert(db.Model):
             "pct": self.pct,
             "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
             "delivery_error": self.delivery_error,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
             "created_at": self.created_at.isoformat(),
         }
