@@ -7,6 +7,8 @@ from flask_jwt_extended import (
     get_jwt,
     get_jwt_identity,
 )
+from sqlalchemy.exc import IntegrityError
+
 from app.extensions import db, jwt_blocklist, limiter
 from app.models import User
 from app.models.alert import AlertLevel
@@ -172,7 +174,13 @@ def update_me():
             return _error("alerts_email_min_level must be 'warn' or 'alert'", 400)
         user.alerts_email_min_level = AlertLevel(raw_level)
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Concurrent update raced us past the email collision check above
+        # and won the UNIQUE(users.email) constraint at commit time.
+        db.session.rollback()
+        return _error("email already in use", 409)
     return jsonify({"user": user.to_dict()}), 200
 
 
