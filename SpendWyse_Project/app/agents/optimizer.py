@@ -22,6 +22,15 @@ PRICE_INCREASE_THRESHOLD = Decimal("1.10")
 # them keeps the audit signal-to-noise high.
 MIN_RECURRING_AMOUNT = Decimal("1.00")
 
+# Minimum charge count -- within the audit lookback window -- to conclude
+# a subscription has been running for at least 12 months. Weekly is 52
+# not 48 (52/4.33 = 12.0mo); yearly is 2 charges (~24mo).
+LONG_RUNNING_MIN_CHARGES = {
+    "weekly": 52,
+    "monthly": 12,
+    "yearly": 2,
+}
+
 # Merchant patterns that hide the real service behind a payment processor.
 PROCESSOR_PATTERNS = [
     "paddle.net",
@@ -57,6 +66,7 @@ def run_audit(user_id: int, lookback_days: int = 365) -> dict:
     issues.extend(_find_suspicious_merchants(enriched))
     issues.extend(_find_category_heavy(by_category, monthly_burn))
     issues.extend(_find_price_increases(enriched))
+    issues.extend(_find_long_running(enriched))
 
     # Rank by dollar impact so the caller can render the actionable
     # (duplicates, trial conversions, price hikes) above the merely
@@ -287,6 +297,46 @@ def _find_price_increases(subs: list[dict]) -> list[dict]:
             ),
         })
     return issues
+
+
+def _find_long_running(subs: list[dict]) -> list[dict]:
+    issues = []
+    for s in subs:
+        cadence = s["cadence"]
+        min_charges = LONG_RUNNING_MIN_CHARGES.get(cadence)
+        if min_charges is None:
+            continue
+        if s["charge_count"] < min_charges:
+            continue
+
+        months = _approx_months_running(cadence, s["charge_count"])
+        issues.append({
+            "type": "long_running",
+            "merchant": s["merchant"],
+            "cadence": cadence,
+            "charge_count": s["charge_count"],
+            "months_running_min": months,
+            "monthly_cost": s["monthly_cost"],
+            "potential_savings_monthly": s["monthly_cost"],
+            "rationale": (
+                f"{s['merchant']} has been charging you for at least "
+                f"{months} months ({s['charge_count']} charges observed); "
+                f"if you no longer use it, canceling saves "
+                f"${s['monthly_cost']}/mo."
+            ),
+        })
+    return issues
+
+
+def _approx_months_running(cadence: str, charge_count: int) -> int:
+    # Conservative floor so "at least N months" is always honest.
+    if cadence == "weekly":
+        return int(charge_count / Decimal("4.33"))
+    if cadence == "monthly":
+        return charge_count
+    if cadence == "yearly":
+        return charge_count * 12
+    return 0
 
 
 def _monthly_from_amount(amount: Decimal, cadence: str) -> Decimal:
