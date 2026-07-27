@@ -17,6 +17,10 @@ TRIAL_FIRST_CHARGE_MAX = Decimal("1.00")
 TRIAL_MIN_LATER_RATIO = Decimal("3")
 CATEGORY_HEAVY_THRESHOLD = Decimal("0.5")
 PRICE_INCREASE_THRESHOLD = Decimal("1.10")
+# Recurring charges below this amount are almost always bank micro-fees
+# or card-verification charges rather than real subscriptions. Filtering
+# them keeps the audit signal-to-noise high.
+MIN_RECURRING_AMOUNT = Decimal("1.00")
 
 # Merchant patterns that hide the real service behind a payment processor.
 PROCESSOR_PATTERNS = [
@@ -35,6 +39,8 @@ def run_audit(user_id: int, lookback_days: int = 365) -> dict:
 
     enriched = []
     for s in subs:
+        if Decimal(s["avg_amount"]) < MIN_RECURRING_AMOUNT:
+            continue
         s = dict(s)
         s["category"] = categorize(s.get("merchant"))
         s["monthly_cost"] = str(_monthly_cost(s).quantize(Decimal("0.01")))
