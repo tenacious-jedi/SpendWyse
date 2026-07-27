@@ -52,11 +52,20 @@ def run_audit(user_id: int, lookback_days: int = 365) -> dict:
     issues.extend(_find_category_heavy(by_category, monthly_burn))
     issues.extend(_find_price_increases(enriched))
 
+    # Rank by dollar impact so the caller can render the actionable
+    # (duplicates, trial conversions, price hikes) above the merely
+    # informational (heads-up renewals, category-heavy notes).
+    issues.sort(key=lambda i: Decimal(i["potential_savings_monthly"]), reverse=True)
+    total_potential_savings = sum(
+        (Decimal(i["potential_savings_monthly"]) for i in issues), Decimal("0")
+    )
+
     return {
         "summary": {
             "monthly_burn": str(monthly_burn.quantize(Decimal("0.01"))),
             "subscription_count": len(enriched),
             "issue_count": len(issues),
+            "total_potential_savings": str(total_potential_savings.quantize(Decimal("0.01"))),
             "lookback_days": lookback_days,
         },
         "by_category": [
@@ -154,6 +163,7 @@ def _find_trial_conversions(user_id: int, subs: list[dict], lookback_days: int) 
             "first_charge_date": first.transaction_date.isoformat(),
             "current_amount": s["avg_amount"],
             "cadence": s["cadence"],
+            "potential_savings_monthly": s["monthly_cost"],
             "rationale": (
                 f"First charge was ${first_amount} on {first.transaction_date.isoformat()}; "
                 f"now charging ${s['avg_amount']} per {s['cadence'].rstrip('ly')}."
@@ -180,6 +190,7 @@ def _find_upcoming_annual_renewals(subs: list[dict]) -> list[dict]:
                 "amount": s["avg_amount"],
                 "next_expected": nxt,
                 "days_until": (next_date - today).days,
+                "potential_savings_monthly": "0.00",
                 "rationale": (
                     f"Annual subscription of ${s['avg_amount']} renews on {nxt} "
                     f"({(next_date - today).days} days away)."
@@ -198,6 +209,7 @@ def _find_suspicious_merchants(subs: list[dict]) -> list[dict]:
                     "type": "suspicious_merchant",
                     "merchant": s["merchant"],
                     "monthly_cost": s["monthly_cost"],
+                    "potential_savings_monthly": "0.00",
                     "rationale": (
                         "Merchant name looks like a payment processor; "
                         "the actual service is unclear — verify what this is."
@@ -225,6 +237,7 @@ def _find_category_heavy(
                 "category": cat,
                 "monthly_cost": str(cat_total.quantize(Decimal("0.01"))),
                 "share_of_total": f"{(share * 100).quantize(Decimal('0.1'))}%",
+                "potential_savings_monthly": "0.00",
                 "rationale": (
                     f"{cat.replace('_', ' ').title()} is "
                     f"{(share * 100).quantize(Decimal('0.1'))}% of your subscription burn."
@@ -248,6 +261,9 @@ def _find_price_increases(subs: list[dict]) -> list[dict]:
             continue
 
         pct = ((ratio - Decimal("1")) * Decimal("100")).quantize(Decimal("0.1"))
+        # Monthly-equivalent of the per-cadence delta, so this can be
+        # compared and summed against the other issue savings figures.
+        savings = _monthly_from_amount(high - low, s["cadence"]).quantize(Decimal("0.01"))
         issues.append({
             "type": "price_increased",
             "merchant": s["merchant"],
@@ -256,6 +272,7 @@ def _find_price_increases(subs: list[dict]) -> list[dict]:
             "max_amount": str(high.quantize(Decimal("0.01"))),
             "pct_increase": f"{pct}%",
             "monthly_cost": s["monthly_cost"],
+            "potential_savings_monthly": str(savings),
             "currency": s.get("currency"),
             "rationale": (
                 f"{s['merchant']} went from ${low.quantize(Decimal('0.01'))} to "
@@ -264,3 +281,13 @@ def _find_price_increases(subs: list[dict]) -> list[dict]:
             ),
         })
     return issues
+
+
+def _monthly_from_amount(amount: Decimal, cadence: str) -> Decimal:
+    if cadence == "weekly":
+        return amount * Decimal("4.33")
+    if cadence == "monthly":
+        return amount
+    if cadence == "yearly":
+        return amount / Decimal("12")
+    return Decimal("0")
