@@ -11,3 +11,4 @@ plaid-python==18.4.0
 kafka-python==3.0.1
 flask-cors==4.0.1
 flask-limiter==3.5.1
+PyJWT[crypto]==2.8.0

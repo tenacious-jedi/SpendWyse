@@ -18,6 +18,7 @@ from app.utils.decorators import require_tier
 from . import plaid_bp
 from .plaid_client import get_plaid_client
 from .sync_service import sync_item
+from .webhook_verifier import WebhookVerificationError, verify as verify_webhook
 
 
 ALL_TIERS = (
@@ -204,3 +205,74 @@ def sync_one_item(item_id: int):
         return _plaid_error(exc)
 
     return jsonify({"synced": result}), 200
+
+
+@plaid_bp.post("/webhook")
+def receive_webhook():
+    """Plaid-facing endpoint. No JWT / tier decorator: Plaid calls this
+    directly, and authenticity is enforced by the ES256 JWS in the
+    Plaid-Verification header (see webhook_verifier).
+
+    We always reply 200 for anything we consider handled or safely
+    ignorable so Plaid does not retry unnecessarily; genuinely bad
+    signatures get 401, and only unexpected server errors get 500.
+    """
+    raw_body = request.get_data(cache=True)
+    header_value = request.headers.get("Plaid-Verification")
+
+    if current_app.config.get("PLAID_WEBHOOK_VERIFY", True):
+        try:
+            verify_webhook(header_value, raw_body)
+        except WebhookVerificationError as exc:
+            current_app.logger.warning("plaid webhook rejected: %s", exc)
+            return jsonify({"error": "invalid signature"}), 401
+    else:
+        current_app.logger.warning(
+            "PLAID_WEBHOOK_VERIFY is false; accepting webhook without signature check"
+        )
+
+    payload = request.get_json(silent=True) or {}
+    webhook_type = payload.get("webhook_type")
+    webhook_code = payload.get("webhook_code")
+    plaid_item_id = payload.get("item_id")
+
+    if webhook_type == "TRANSACTIONS" and webhook_code == "SYNC_UPDATES_AVAILABLE":
+        return _dispatch_transactions_sync(plaid_item_id)
+
+    current_app.logger.info(
+        "plaid webhook ignored type=%s code=%s item=%s",
+        webhook_type, webhook_code, plaid_item_id,
+    )
+    return jsonify({"received": True, "handled": False}), 200
+
+
+def _dispatch_transactions_sync(plaid_item_id):
+    if not plaid_item_id:
+        current_app.logger.warning("plaid SYNC_UPDATES_AVAILABLE missing item_id")
+        return jsonify({"received": True, "handled": False}), 200
+
+    item = PlaidItem.query.filter_by(
+        plaid_item_id=plaid_item_id, is_active=True
+    ).first()
+    if not item:
+        # The item may have been removed since Plaid queued the webhook.
+        # Ack so Plaid stops retrying.
+        current_app.logger.info(
+            "plaid webhook for unknown/inactive item %s; acking", plaid_item_id
+        )
+        return jsonify({"received": True, "handled": False}), 200
+
+    try:
+        result = sync_item(item)
+    except plaid.ApiException as exc:
+        db.session.rollback()
+        current_app.logger.exception(
+            "plaid sync failed for item %s during webhook", plaid_item_id
+        )
+        # Return 500 so Plaid retries; we want the next attempt to try again.
+        return jsonify({
+            "error": "sync failed",
+            "details": getattr(exc, "body", None),
+        }), 500
+
+    return jsonify({"received": True, "handled": True, "synced": result}), 200

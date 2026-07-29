@@ -24,6 +24,9 @@ class Config:
     PLAID_SECRET = os.getenv("PLAID_SECRET", "")
     PLAID_ENV = os.getenv("PLAID_ENV", "sandbox")
     PLAID_TOKEN_ENCRYPTION_KEY = os.getenv("PLAID_TOKEN_ENCRYPTION_KEY", "")
+    PLAID_WEBHOOK_VERIFY = os.getenv("PLAID_WEBHOOK_VERIFY", "true").lower() in (
+        "true", "1", "yes"
+    )
 
     STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
     STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
