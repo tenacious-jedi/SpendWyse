@@ -50,6 +50,10 @@ class Config:
         "PASSWORD_RESET_URL", "http://localhost:3000/reset-password"
     )
 
+    TEAM_INVITE_URL = os.getenv(
+        "TEAM_INVITE_URL", "http://localhost:3000/teams/accept-invite"
+    )
+
     CORS_ALLOWED_ORIGINS = [
         origin.strip()
         for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")

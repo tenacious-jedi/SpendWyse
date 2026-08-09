@@ -1,6 +1,7 @@
 from .user import User
 from .subscription import Subscription
 from .team import Team, TeamMember
+from .team_invitation import TeamInvitation
 from .transaction import Transaction
 from .plaid_item import PlaidItem
 from .tag import Tag
@@ -14,6 +15,7 @@ __all__ = [
     "Subscription",
     "Team",
     "TeamMember",
+    "TeamInvitation",
     "Transaction",
     "PlaidItem",
     "Tag",

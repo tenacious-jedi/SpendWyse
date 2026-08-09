@@ -57,6 +57,7 @@ def create_app():
     from app.recurring import recurring_bp
     from app.agents import agents_bp
     from app.health import health_bp
+    from app.teams import teams_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(transactions_bp)
@@ -70,12 +71,14 @@ def create_app():
     app.register_blueprint(recurring_bp)
     app.register_blueprint(agents_bp)
     app.register_blueprint(health_bp)
+    app.register_blueprint(teams_bp)
 
     from app.models import (  # noqa: F401
         User,
         Subscription,
         Team,
         TeamMember,
+        TeamInvitation,
         Transaction,
         PlaidItem,
         Tag,
