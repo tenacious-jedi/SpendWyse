@@ -239,6 +239,9 @@ def receive_webhook():
     if webhook_type == "TRANSACTIONS" and webhook_code == "SYNC_UPDATES_AVAILABLE":
         return _dispatch_transactions_sync(plaid_item_id)
 
+    if webhook_type == "ITEM":
+        return _handle_item_webhook(webhook_code, plaid_item_id, payload)
+
     current_app.logger.info(
         "plaid webhook ignored type=%s code=%s item=%s",
         webhook_type, webhook_code, plaid_item_id,
@@ -276,3 +279,60 @@ def _dispatch_transactions_sync(plaid_item_id):
         }), 500
 
     return jsonify({"received": True, "handled": True, "synced": result}), 200
+
+
+# ITEM webhook codes that unambiguously mean the link is broken and can only be
+# fixed by the user re-authenticating through Link. These carry no nested error.
+_ITEM_DEACTIVATE_CODES = frozenset({
+    "PENDING_EXPIRATION",
+    "USER_PERMISSION_REVOKED",
+})
+# The ITEM/ERROR webhook also fires for transient problems (institution down,
+# rate limits, internal errors) that recover on their own. Only this nested
+# error_code actually requires the user to re-authenticate, so it is the only
+# ERROR case we deactivate on.
+_ITEM_REAUTH_ERROR_CODE = "ITEM_LOGIN_REQUIRED"
+
+
+def _handle_item_webhook(webhook_code, plaid_item_id, payload):
+    if not plaid_item_id:
+        current_app.logger.warning("plaid ITEM webhook missing item_id")
+        return jsonify({"received": True, "handled": False}), 200
+
+    # Plaid nests the underlying cause under an `error` object for ERROR codes.
+    error_detail = payload.get("error") or {}
+    plaid_error_code = error_detail.get("error_code")
+
+    if webhook_code == "ERROR":
+        should_deactivate = plaid_error_code == _ITEM_REAUTH_ERROR_CODE
+    else:
+        should_deactivate = webhook_code in _ITEM_DEACTIVATE_CODES
+
+    if not should_deactivate:
+        current_app.logger.info(
+            "plaid ITEM webhook ignored code=%s error_code=%s item=%s",
+            webhook_code, plaid_error_code, plaid_item_id,
+        )
+        return jsonify({"received": True, "handled": False}), 200
+
+    item = PlaidItem.query.filter_by(plaid_item_id=plaid_item_id).first()
+    if not item:
+        current_app.logger.info(
+            "plaid ITEM webhook for unknown item %s; acking", plaid_item_id
+        )
+        return jsonify({"received": True, "handled": False}), 200
+
+    if not item.is_active:
+        current_app.logger.info(
+            "plaid item %s already inactive; code=%s error_code=%s",
+            plaid_item_id, webhook_code, plaid_error_code,
+        )
+        return jsonify({"received": True, "handled": True}), 200
+
+    item.is_active = False
+    db.session.commit()
+    current_app.logger.warning(
+        "deactivated plaid item %s after ITEM webhook code=%s error_code=%s",
+        plaid_item_id, webhook_code, plaid_error_code,
+    )
+    return jsonify({"received": True, "handled": True}), 200
