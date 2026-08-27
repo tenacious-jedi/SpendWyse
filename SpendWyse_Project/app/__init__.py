@@ -86,6 +86,7 @@ def create_app():
         SpendCap,
         Alert,
         PasswordResetToken,
+        OutboxEvent,
     )
 
     return app

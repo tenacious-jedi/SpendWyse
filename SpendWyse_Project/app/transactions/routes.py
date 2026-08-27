@@ -3,7 +3,7 @@ from flask import request, jsonify, current_app
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import and_
 
-from app.events.publisher import publish
+from app.events.outbox import enqueue
 from app.events.schema import TRANSACTION_TAGGED
 from app.extensions import db
 from app.models.transaction import Transaction, TransactionSource, TransactionType
@@ -138,10 +138,12 @@ def create_transaction():
     txn.tag_id = explicit_tag if explicit_tag is not None else apply_rules(user_id, txn)
 
     db.session.add(txn)
-    db.session.commit()
+    # Flush to assign txn.id so the event can reference it, then stage the event
+    # in the same transaction as the row it describes.
+    db.session.flush()
 
     if txn.tag_id is not None:
-        publish(
+        enqueue(
             TRANSACTION_TAGGED,
             {
                 "user_id": user_id,
@@ -150,6 +152,8 @@ def create_transaction():
             },
             key=str(user_id),
         )
+
+    db.session.commit()
 
     return jsonify({"transaction": txn.to_dict()}), 201
 

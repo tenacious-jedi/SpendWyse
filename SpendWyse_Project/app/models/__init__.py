@@ -9,6 +9,7 @@ from .tag_rule import TagRule
 from .spend_cap import SpendCap
 from .alert import Alert
 from .password_reset_token import PasswordResetToken
+from .outbox_event import OutboxEvent
 
 __all__ = [
     "User",
@@ -23,4 +24,5 @@ __all__ = [
     "SpendCap",
     "Alert",
     "PasswordResetToken",
+    "OutboxEvent",
 ]

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
-from app.events.publisher import publish
+from app.events.outbox import enqueue
 from app.events.schema import TRANSACTION_TAGGED
 from app.extensions import db
 from app.models.plaid_item import PlaidItem
@@ -65,11 +65,12 @@ def sync_item(plaid_item: PlaidItem) -> dict:
         # Persist cursor only after the page's rows are in the session.
         plaid_item.cursor = cursor
         plaid_item.last_synced_at = datetime.now(timezone.utc)
-        db.session.commit()
 
-        # Publish only after commit so we never announce a row that didn't land.
+        # Flush to assign ids to the new rows, then stage their events in the
+        # same transaction so a committed row always carries its event.
+        db.session.flush()
         for txn in tagged_this_page:
-            publish(
+            enqueue(
                 TRANSACTION_TAGGED,
                 {
                     "user_id": txn.user_id,
@@ -78,6 +79,8 @@ def sync_item(plaid_item: PlaidItem) -> dict:
                 },
                 key=str(txn.user_id),
             )
+
+        db.session.commit()
 
     return {
         "plaid_item_id": plaid_item.id,
