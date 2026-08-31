@@ -10,6 +10,7 @@ from .spend_cap import SpendCap
 from .alert import Alert
 from .password_reset_token import PasswordResetToken
 from .outbox_event import OutboxEvent
+from .processed_event import ProcessedEvent
 
 __all__ = [
     "User",
@@ -25,4 +26,5 @@ __all__ = [
     "Alert",
     "PasswordResetToken",
     "OutboxEvent",
+    "ProcessedEvent",
 ]

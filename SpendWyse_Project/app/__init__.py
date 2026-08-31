@@ -87,6 +87,7 @@ def create_app():
         Alert,
         PasswordResetToken,
         OutboxEvent,
+        ProcessedEvent,
     )
 
     return app

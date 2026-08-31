@@ -5,6 +5,7 @@ import signal
 from flask import Flask
 from kafka import KafkaConsumer
 
+from app.events.idempotency import already_processed, mark_processed
 from app.events.schema import TRANSACTION_TAGGED
 from app.tags.alert_service import check_caps_and_notify
 
@@ -72,5 +73,19 @@ def _handle(app: Flask, envelope: dict) -> None:
     if not user_id:
         return
 
+    event_id = envelope.get("event_id")
+    group_id = app.config["KAFKA_CONSUMER_GROUP"]
+
     with app.app_context():
+        # At-least-once delivery can redeliver an event; skip if we already
+        # handled it. Only events carrying an event_id can be deduped.
+        if event_id and already_processed(group_id, event_id):
+            logger.info("skipping already-processed event_id=%s", event_id)
+            return
+
         check_caps_and_notify(int(user_id), only_tag_id=tag_id)
+
+        # Record only after successful processing so a crash mid-handling
+        # leaves the event unmarked and safely reprocessable.
+        if event_id:
+            mark_processed(group_id, event_id)
