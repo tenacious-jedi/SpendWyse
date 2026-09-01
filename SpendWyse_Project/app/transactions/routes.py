@@ -1,4 +1,6 @@
 from datetime import date
+from decimal import Decimal, InvalidOperation
+
 from flask import request, jsonify, current_app
 from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import and_
@@ -106,10 +108,13 @@ def create_transaction():
     if amount is None:
         return _error("amount is required", 400)
     try:
-        amount = float(amount)
-        if amount <= 0:
-            raise ValueError
-    except (ValueError, TypeError):
+        # Money is stored as Numeric; parse as Decimal like the rest of the
+        # codebase. is_finite() rejects NaN/Inf, which slip past a plain > 0
+        # check (nan <= 0 and inf <= 0 are both False).
+        amount = Decimal(str(amount))
+        if not amount.is_finite() or amount <= 0:
+            raise InvalidOperation
+    except (InvalidOperation, TypeError, ValueError):
         return _error("amount must be a positive number", 400)
 
     if not transaction_date_raw:
