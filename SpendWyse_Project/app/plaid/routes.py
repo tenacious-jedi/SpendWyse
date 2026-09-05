@@ -88,7 +88,25 @@ def exchange_public_token():
 
     existing = PlaidItem.query.filter_by(plaid_item_id=resp.item_id).first()
     if existing:
-        return _error("this bank is already linked", 409)
+        # Never touch an item owned by another user.
+        if existing.user_id != _uid():
+            return _error("this bank is already linked", 409)
+
+        # An active item is already usable; re-linking it is a no-op conflict.
+        if existing.is_active:
+            return _error("this bank is already linked", 409)
+
+        # Reactivate a previously deactivated link (e.g. the user repaired it
+        # through Link after an ITEM_LOGIN_REQUIRED). Exchange issues a fresh
+        # access token, so store it in case the old one was invalidated.
+        existing.access_token = resp.access_token
+        if data.get("institution_id"):
+            existing.institution_id = data.get("institution_id")
+        if data.get("institution_name"):
+            existing.institution_name = data.get("institution_name")
+        existing.is_active = True
+        db.session.commit()
+        return jsonify({"plaid_item": existing.to_dict()}), 200
 
     pit = PlaidItem(
         user_id=_uid(),
