@@ -34,6 +34,29 @@ def _uid() -> int:
     return int(get_jwt_identity())
 
 
+# Cap thresholds are percentages of the limit. Allow above 100 so users can
+# alert on overspend, but bound both ends to reject absurd/negative input.
+CAP_PCT_MIN = 1
+CAP_PCT_MAX = 1000
+
+
+def _parse_pct(value, field: str):
+    """Parse and range-check a cap threshold percentage.
+
+    Returns (pct, None) on success or (None, error_response) on failure, so
+    callers can `pct, err = _parse_pct(...); if err: return err`.
+    """
+    try:
+        pct = int(value)
+    except (ValueError, TypeError):
+        return None, _error(f"{field} must be an integer", 400)
+    if not CAP_PCT_MIN <= pct <= CAP_PCT_MAX:
+        return None, _error(
+            f"{field} must be between {CAP_PCT_MIN} and {CAP_PCT_MAX}", 400
+        )
+    return pct, None
+
+
 def _parent_creates_cycle(tag_id: int, proposed_parent_id, user_id: int) -> bool:
     """Walk up from the proposed parent; return True if `tag_id` appears.
 
@@ -293,6 +316,17 @@ def create_cap():
     except (InvalidOperation, TypeError):
         return _error("limit_amount must be a positive number", 400)
 
+    warn_pct, err = _parse_pct(data.get("warn_pct", 80), "warn_pct")
+    if err:
+        return err
+    alert_pct, err = _parse_pct(data.get("alert_pct", 100), "alert_pct")
+    if err:
+        return err
+    # warn must trip before alert; evaluate_cap checks alert first, so
+    # warn >= alert makes the warn state unreachable.
+    if warn_pct >= alert_pct:
+        return _error("warn_pct must be less than alert_pct", 400)
+
     tag = Tag.query.filter_by(id=tag_id, user_id=_uid()).first()
     if not tag:
         return _error("tag not found", 404)
@@ -303,8 +337,8 @@ def create_cap():
         period=CapPeriod(period_raw),
         limit_amount=limit_amount,
         currency=(data.get("currency", "USD") or "USD").upper()[:3],
-        warn_pct=int(data.get("warn_pct", 80)),
-        alert_pct=int(data.get("alert_pct", 100)),
+        warn_pct=warn_pct,
+        alert_pct=alert_pct,
         is_active=bool(data.get("is_active", True)),
     )
     db.session.add(cap)
@@ -339,12 +373,22 @@ def update_cap(cap_id: int):
             return _error("period must be weekly, monthly, or yearly", 400)
         cap.period = CapPeriod(data["period"])
 
-    for field in ("warn_pct", "alert_pct"):
-        if field in data:
-            try:
-                setattr(cap, field, int(data[field]))
-            except (ValueError, TypeError):
-                return _error(f"{field} must be an integer", 400)
+    # Validate against the effective values (incoming where present, else the
+    # stored ones) so a partial update can't leave warn >= alert.
+    warn_pct = cap.warn_pct
+    alert_pct = cap.alert_pct
+    if "warn_pct" in data:
+        warn_pct, err = _parse_pct(data["warn_pct"], "warn_pct")
+        if err:
+            return err
+    if "alert_pct" in data:
+        alert_pct, err = _parse_pct(data["alert_pct"], "alert_pct")
+        if err:
+            return err
+    if warn_pct >= alert_pct:
+        return _error("warn_pct must be less than alert_pct", 400)
+    cap.warn_pct = warn_pct
+    cap.alert_pct = alert_pct
 
     if "currency" in data:
         cap.currency = (data["currency"] or "USD").upper()[:3]
