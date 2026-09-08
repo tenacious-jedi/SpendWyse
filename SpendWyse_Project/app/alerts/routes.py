@@ -76,6 +76,18 @@ def list_alerts():
     }), 200
 
 
+@alerts_bp.get("/unread-count")
+@require_tier(*ALL_TIERS)
+def unread_count():
+    """Just the unread count, so a UI badge need not page through alerts."""
+    count = (
+        Alert.query
+        .filter_by(user_id=_uid(), read_at=None)
+        .count()
+    )
+    return jsonify({"unread_count": count}), 200
+
+
 @alerts_bp.get("/<int:alert_id>")
 @require_tier(*ALL_TIERS)
 def get_alert(alert_id: int):
