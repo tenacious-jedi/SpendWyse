@@ -92,13 +92,11 @@ def exchange_public_token():
         if existing.user_id != _uid():
             return _error("this bank is already linked", 409)
 
-        # An active item is already usable; re-linking it is a no-op conflict.
-        if existing.is_active:
-            return _error("this bank is already linked", 409)
-
-        # Reactivate a previously deactivated link (e.g. the user repaired it
-        # through Link after an ITEM_LOGIN_REQUIRED). Exchange issues a fresh
-        # access token, so store it in case the old one was invalidated.
+        # Re-linking an item the caller already owns, whether it was active or
+        # deactivated (e.g. repaired through Link after ITEM_LOGIN_REQUIRED).
+        # Exchange issues a fresh access token and may rotate/invalidate the
+        # old one, so always store the new token and (re)activate. Idempotent:
+        # a repeated exchange simply refreshes the stored token.
         existing.access_token = resp.access_token
         if data.get("institution_id"):
             existing.institution_id = data.get("institution_id")
