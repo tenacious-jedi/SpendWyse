@@ -8,7 +8,7 @@ Savings Spend Agent - Agent that investigates why the spend went up in a particu
 
 ## Status
 
-Backend API is feature-complete: auth (incl. password reset), Plaid bank linking and transaction sync, user-defined tags and auto-tagging rules, spend caps with warn/alert thresholds, alert delivery via a Kafka event bus, Stripe-billed subscriptions, and reports. Agents and a frontend are still pending. 
+Backend API is feature-complete: auth (incl. password reset), Plaid bank linking and transaction sync, user-defined tags and auto-tagging rules, spend caps with warn/alert thresholds, alert delivery via a Kafka event bus, Stripe-billed subscriptions, and reports. Frontend is still pending. 
 
 ## Running locally
 
