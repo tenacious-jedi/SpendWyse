@@ -66,6 +66,11 @@ def list_transactions():
     end_date = _parse_date(request.args.get("end_date"))
     transaction_type = request.args.get("type")
 
+    # Reject an inverted range up front; otherwise the filters below silently
+    # return an empty list instead of signalling the bad input.
+    if start_date and end_date and start_date > end_date:
+        return _error("start_date must not be after end_date", 400)
+
     query = Transaction.query.filter(
         Transaction.user_id == user_id,
         Transaction.is_deleted == False,
