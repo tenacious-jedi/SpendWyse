@@ -1,0 +1,132 @@
+# Full SpendWyse stack: infrastructure (postgres, kafka), a one-shot
+# migration job, and the three long-running app processes (web server,
+# alert worker, outbox relay). Run with `docker compose up --build`.
+#
+# App secrets (SECRET_KEY, JWT_SECRET_KEY, PLAID_*, STRIPE_*, SMTP_*) are read
+# from .env; copy .env.example to .env first. The connection strings below
+# intentionally override the localhost values in .env so the containers reach
+# each other by service name (environment wins over env_file in compose).
+
+# Shared build + environment for the three app services, merged in via YAML
+# anchors so the web/worker/relay stay in lockstep.
+x-app-env: &app-env
+  DATABASE_URL: postgresql://spendwyse:spendwyse_dev@db:5432/spendwyse_db
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  FLASK_ENV: ${FLASK_ENV:-production}
+
+x-app: &app
+  build:
+    context: .
+  image: spendwyse-app
+  env_file:
+    - .env
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: spendwyse
+      POSTGRES_PASSWORD: spendwyse_dev
+      POSTGRES_DB: spendwyse_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spendwyse -d spendwyse_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.7.0
+    restart: unless-stopped
+    ports:
+      # Host-facing listener; in-cluster clients use kafka:9092 instead.
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # Three listeners: internal (containers), host (localhost tools), controller.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,PLAINTEXT_HOST://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qg'
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # One-shot job: bring the schema up to head, then exit. The app services
+  # wait for this to complete successfully before starting.
+  migrate:
+    <<: *app
+    restart: "no"
+    environment:
+      <<: *app-env
+      FLASK_APP: run.py
+    command: ["flask", "db", "upgrade"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  server:
+    <<: *app
+    environment:
+      <<: *app-env
+    command: ["gunicorn", "run:app", "--bind", "0.0.0.0:8000", "--workers", "2"]
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health/').status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    <<: *app
+    environment:
+      <<: *app-env
+    command: ["python", "worker.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  outbox-relay:
+    <<: *app
+    environment:
+      <<: *app-env
+    command: ["python", "outbox_relay.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
+  kafka_data:
