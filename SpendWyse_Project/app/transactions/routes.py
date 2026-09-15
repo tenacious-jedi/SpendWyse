@@ -62,9 +62,19 @@ def list_transactions():
 
     # Optional filters
     category = request.args.get("category")
-    start_date = _parse_date(request.args.get("start_date"))
-    end_date = _parse_date(request.args.get("end_date"))
+    start_date_raw = request.args.get("start_date")
+    end_date_raw = request.args.get("end_date")
     transaction_type = request.args.get("type")
+
+    # Only an absent param means "no filter"; a param that is present but
+    # unparseable is a client error, not a silently-dropped filter that would
+    # return an unfiltered result set with a misleading 200.
+    start_date = _parse_date(start_date_raw) if start_date_raw else None
+    if start_date_raw and start_date is None:
+        return _error("start_date must be in YYYY-MM-DD format", 400)
+    end_date = _parse_date(end_date_raw) if end_date_raw else None
+    if end_date_raw and end_date is None:
+        return _error("end_date must be in YYYY-MM-DD format", 400)
 
     # Reject an inverted range up front; otherwise the filters below silently
     # return an empty list instead of signalling the bad input.
