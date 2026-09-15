@@ -211,11 +211,14 @@ def update_transaction(transaction_id: int):
 
     if "amount" in data:
         try:
-            amount = float(data["amount"])
-            if amount <= 0:
-                raise ValueError
+            # Parse as Decimal and reject non-finite values, matching
+            # create_transaction; is_finite() screens out NaN/Inf, which pass
+            # a plain > 0 check (nan <= 0 and inf <= 0 are both False).
+            amount = Decimal(str(data["amount"]))
+            if not amount.is_finite() or amount <= 0:
+                raise InvalidOperation
             txn.amount = amount
-        except (ValueError, TypeError):
+        except (InvalidOperation, TypeError, ValueError):
             return _error("amount must be a positive number", 400)
 
     if "transaction_date" in data:
