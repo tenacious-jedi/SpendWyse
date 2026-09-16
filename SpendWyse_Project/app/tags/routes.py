@@ -311,7 +311,9 @@ def create_cap():
 
     try:
         limit_amount = Decimal(str(limit_amount_raw))
-        if limit_amount <= 0:
+        # is_finite() screens out Inf, which passes a plain <= 0 check
+        # (inf <= 0 is False) and would make the cap permanently "ok".
+        if not limit_amount.is_finite() or limit_amount <= 0:
             raise InvalidOperation
     except (InvalidOperation, TypeError):
         return _error("limit_amount must be a positive number", 400)
@@ -362,7 +364,9 @@ def update_cap(cap_id: int):
     if "limit_amount" in data:
         try:
             amt = Decimal(str(data["limit_amount"]))
-            if amt <= 0:
+            # is_finite() screens out Inf, which passes a plain <= 0 check
+            # (inf <= 0 is False) and would make the cap permanently "ok".
+            if not amt.is_finite() or amt <= 0:
                 raise InvalidOperation
             cap.limit_amount = amt
         except (InvalidOperation, TypeError):
