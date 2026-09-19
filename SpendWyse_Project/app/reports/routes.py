@@ -37,7 +37,9 @@ def _parse_month(value: str) -> tuple[int, int] | None:
     try:
         y, m = value.split("-")
         year, month = int(y), int(m)
-        if 1 <= month <= 12 and year > 1900:
+        # Upper-bound the year to date's own range (max 9999); otherwise a value
+        # like 99999 passes here and raises ValueError when a date is built.
+        if 1 <= month <= 12 and 1900 < year <= 9999:
             return year, month
     except (ValueError, AttributeError):
         pass

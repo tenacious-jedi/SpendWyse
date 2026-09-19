@@ -54,7 +54,9 @@ def _parse_month(value: str):
         year, month = int(y), int(m)
     except (ValueError, AttributeError):
         return None
-    if not (1 <= month <= 12 and year > 1900):
+    # Upper-bound the year to date's own range (max 9999); otherwise a value
+    # like 99999 passes here and raises ValueError when a date is built.
+    if not (1 <= month <= 12 and 1900 < year <= 9999):
         return None
     return year, month
 
