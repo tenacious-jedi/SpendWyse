@@ -5,6 +5,7 @@ from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
 from app.models.tag import Tag
+from app.utils.dates import parse_month
 from app.utils.decorators import require_tier
 from . import agents_bp
 from .optimizer import run_audit
@@ -48,19 +49,6 @@ def optimizer_audit():
     return jsonify(run_audit(_uid(), lookback_days=lookback)), 200
 
 
-def _parse_month(value: str):
-    try:
-        y, m = value.split("-")
-        year, month = int(y), int(m)
-    except (ValueError, AttributeError):
-        return None
-    # Upper-bound the year to date's own range (max 9999); otherwise a value
-    # like 99999 passes here and raises ValueError when a date is built.
-    if not (1 <= month <= 12 and 1900 < year <= 9999):
-        return None
-    return year, month
-
-
 def _decimal_to_str(value):
     if value is None:
         return None
@@ -80,7 +68,7 @@ def savings_spend_tag(tag_id: int):
 
     month_param = request.args.get("month")
     if month_param:
-        parsed = _parse_month(month_param)
+        parsed = parse_month(month_param)
         if parsed is None:
             return _error("month must be in YYYY-MM format", 400)
         year, month = parsed

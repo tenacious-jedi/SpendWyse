@@ -1,4 +1,3 @@
-from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from flask import request, jsonify, current_app
@@ -10,6 +9,7 @@ from app.events.schema import TRANSACTION_TAGGED
 from app.extensions import db
 from app.models.transaction import Transaction, TransactionSource, TransactionType
 from app.tags.rule_engine import apply_rules
+from app.utils.dates import parse_date
 from app.utils.decorators import require_tier
 from . import transactions_bp
 
@@ -39,13 +39,6 @@ def _get_current_user_id() -> int:
     return int(get_jwt_identity())
 
 
-def _parse_date(value: str):
-    try:
-        return date.fromisoformat(value)
-    except (ValueError, TypeError):
-        return None
-
-
 @transactions_bp.get("/")
 @require_tier(*ALL_TIERS)
 def list_transactions():
@@ -69,10 +62,10 @@ def list_transactions():
     # Only an absent param means "no filter"; a param that is present but
     # unparseable is a client error, not a silently-dropped filter that would
     # return an unfiltered result set with a misleading 200.
-    start_date = _parse_date(start_date_raw) if start_date_raw else None
+    start_date = parse_date(start_date_raw) if start_date_raw else None
     if start_date_raw and start_date is None:
         return _error("start_date must be in YYYY-MM-DD format", 400)
-    end_date = _parse_date(end_date_raw) if end_date_raw else None
+    end_date = parse_date(end_date_raw) if end_date_raw else None
     if end_date_raw and end_date is None:
         return _error("end_date must be in YYYY-MM-DD format", 400)
 
@@ -134,7 +127,7 @@ def create_transaction():
 
     if not transaction_date_raw:
         return _error("transaction_date is required (YYYY-MM-DD)", 400)
-    transaction_date = _parse_date(transaction_date_raw)
+    transaction_date = parse_date(transaction_date_raw)
     if not transaction_date:
         return _error("transaction_date must be in YYYY-MM-DD format", 400)
 
@@ -232,7 +225,7 @@ def update_transaction(transaction_id: int):
             return _error("amount must be a positive number", 400)
 
     if "transaction_date" in data:
-        parsed = _parse_date(data["transaction_date"])
+        parsed = parse_date(data["transaction_date"])
         if not parsed:
             return _error("transaction_date must be in YYYY-MM-DD format", 400)
         txn.transaction_date = parsed

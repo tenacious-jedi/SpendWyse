@@ -6,6 +6,7 @@ from flask_jwt_extended import get_jwt_identity
 from app.models.alert import Alert
 from app.models.spend_cap import SpendCap
 from app.tags.cap_evaluator import evaluate_all_for_user
+from app.utils.dates import parse_month
 from app.utils.decorators import require_tier
 from . import reports_bp
 from .queries import month_totals, monthly_report, trend_report
@@ -33,25 +34,12 @@ def _uid() -> int:
     return int(get_jwt_identity())
 
 
-def _parse_month(value: str) -> tuple[int, int] | None:
-    try:
-        y, m = value.split("-")
-        year, month = int(y), int(m)
-        # Upper-bound the year to date's own range (max 9999); otherwise a value
-        # like 99999 passes here and raises ValueError when a date is built.
-        if 1 <= month <= 12 and 1900 < year <= 9999:
-            return year, month
-    except (ValueError, AttributeError):
-        pass
-    return None
-
-
 @reports_bp.get("/monthly")
 @require_tier(*ALL_TIERS)
 def monthly():
     month_param = request.args.get("month")
     if month_param:
-        parsed = _parse_month(month_param)
+        parsed = parse_month(month_param)
         if parsed is None:
             return _error("month must be in YYYY-MM format", 400)
         year, month = parsed
