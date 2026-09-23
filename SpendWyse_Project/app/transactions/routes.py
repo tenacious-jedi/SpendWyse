@@ -39,6 +39,15 @@ def _get_current_user_id() -> int:
     return int(get_jwt_identity())
 
 
+def _normalize_currency(raw):
+    # ISO-4217 codes are three ASCII letters; validate rather than silently
+    # truncating (e.g. "DOLLARS" -> "DOL") or storing junk like "1$".
+    currency = (raw or "").strip().upper()
+    if len(currency) != 3 or not (currency.isascii() and currency.isalpha()):
+        return None
+    return currency
+
+
 @transactions_bp.get("/")
 @require_tier(*ALL_TIERS)
 def list_transactions():
@@ -135,10 +144,14 @@ def create_transaction():
     if txn_type_raw not in ("debit", "credit"):
         return _error("transaction_type must be 'debit' or 'credit'", 400)
 
+    currency = _normalize_currency(data.get("currency") or "USD")
+    if currency is None:
+        return _error("currency must be a 3-letter code", 400)
+
     txn = Transaction(
         user_id=user_id,
         amount=amount,
-        currency=(data.get("currency") or "USD").upper()[:3],
+        currency=currency,
         transaction_type=TransactionType[txn_type_raw],
         merchant=(data.get("merchant") or "").strip() or None,
         category=(data.get("category") or "").strip() or None,
@@ -207,9 +220,9 @@ def update_transaction(transaction_id: int):
             setattr(txn, field, value or None)
 
     if "currency" in data:
-        currency = (data["currency"] or "").strip().upper()[:3]
-        if not currency:
-            return _error("currency cannot be empty", 400)
+        currency = _normalize_currency(data["currency"])
+        if currency is None:
+            return _error("currency must be a 3-letter code", 400)
         txn.currency = currency
 
     if "amount" in data:
