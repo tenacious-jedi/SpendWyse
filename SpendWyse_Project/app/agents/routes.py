@@ -9,7 +9,7 @@ from app.utils.dates import parse_month
 from app.utils.decorators import require_tier
 from . import agents_bp
 from .optimizer import run_audit
-from .savings_spend import compare_to_baseline
+from .savings_spend import compare_to_baseline, summarize_all_tags
 
 
 ALL_TIERS = (
@@ -57,6 +57,18 @@ def _decimal_to_str(value):
     return value
 
 
+def _resolve_month(month_param):
+    """Resolve a ?month=YYYY-MM arg to (year, month).
+
+    Returns the current month when the arg is absent, or None when it is
+    present but unparseable so the caller can return a 400.
+    """
+    if not month_param:
+        today = date.today()
+        return today.year, today.month
+    return parse_month(month_param)
+
+
 @agents_bp.get("/savings-spend/tag/<int:tag_id>")
 @require_tier(*ALL_TIERS)
 def savings_spend_tag(tag_id: int):
@@ -66,15 +78,10 @@ def savings_spend_tag(tag_id: int):
     if not tag:
         return _error("tag not found", 404)
 
-    month_param = request.args.get("month")
-    if month_param:
-        parsed = parse_month(month_param)
-        if parsed is None:
-            return _error("month must be in YYYY-MM format", 400)
-        year, month = parsed
-    else:
-        today = date.today()
-        year, month = today.year, today.month
+    resolved = _resolve_month(request.args.get("month"))
+    if resolved is None:
+        return _error("month must be in YYYY-MM format", 400)
+    year, month = resolved
 
     result = compare_to_baseline(user_id, tag_id, year, month)
 
@@ -87,5 +94,29 @@ def savings_spend_tag(tag_id: int):
         for bm in result["baseline_months"]
     ]
     result["tag_name"] = tag.name
+
+    return jsonify(result), 200
+
+
+@agents_bp.get("/savings-spend/summary")
+@require_tier(*ALL_TIERS)
+def savings_spend_summary():
+    user_id = _uid()
+
+    resolved = _resolve_month(request.args.get("month"))
+    if resolved is None:
+        return _error("month must be in YYYY-MM format", 400)
+    year, month = resolved
+
+    result = summarize_all_tags(user_id, year, month)
+
+    money_fields = ("current", "baseline_avg", "delta", "pct_change")
+    result["tags"] = [
+        {**row, **{f: _decimal_to_str(row[f]) for f in money_fields}}
+        for row in result["tags"]
+    ]
+    result["totals"] = {
+        k: _decimal_to_str(v) for k, v in result["totals"].items()
+    }
 
     return jsonify(result), 200
