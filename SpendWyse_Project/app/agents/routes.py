@@ -1,5 +1,5 @@
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
@@ -9,7 +9,11 @@ from app.utils.dates import parse_month
 from app.utils.decorators import require_tier
 from . import agents_bp
 from .optimizer import run_audit
-from .savings_spend import compare_to_baseline, summarize_all_tags
+from .savings_spend import (
+    STATUS_TOLERANCE_PCT,
+    compare_to_baseline,
+    summarize_all_tags,
+)
 
 
 ALL_TIERS = (
@@ -69,6 +73,23 @@ def _resolve_month(month_param):
     return parse_month(month_param)
 
 
+def _resolve_tolerance(raw):
+    """Resolve a ?tolerance_pct= arg to a Decimal.
+
+    Returns the default band when the arg is absent, or None when it is
+    present but not a non-negative finite number so the caller can return a 400.
+    """
+    if raw is None:
+        return STATUS_TOLERANCE_PCT
+    try:
+        value = Decimal(raw)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not value.is_finite() or value < 0:
+        return None
+    return value
+
+
 @agents_bp.get("/savings-spend/tag/<int:tag_id>")
 @require_tier(*ALL_TIERS)
 def savings_spend_tag(tag_id: int):
@@ -83,7 +104,11 @@ def savings_spend_tag(tag_id: int):
         return _error("month must be in YYYY-MM format", 400)
     year, month = resolved
 
-    result = compare_to_baseline(user_id, tag_id, year, month)
+    tolerance = _resolve_tolerance(request.args.get("tolerance_pct"))
+    if tolerance is None:
+        return _error("tolerance_pct must be a non-negative number", 400)
+
+    result = compare_to_baseline(user_id, tag_id, year, month, tolerance_pct=tolerance)
 
     result["current"] = _decimal_to_str(result["current"])
     result["baseline_avg"] = _decimal_to_str(result["baseline_avg"])
@@ -108,7 +133,11 @@ def savings_spend_summary():
         return _error("month must be in YYYY-MM format", 400)
     year, month = resolved
 
-    result = summarize_all_tags(user_id, year, month)
+    tolerance = _resolve_tolerance(request.args.get("tolerance_pct"))
+    if tolerance is None:
+        return _error("tolerance_pct must be a non-negative number", 400)
+
+    result = summarize_all_tags(user_id, year, month, tolerance_pct=tolerance)
 
     money_fields = ("current", "baseline_avg", "delta", "pct_change")
     result["tags"] = [

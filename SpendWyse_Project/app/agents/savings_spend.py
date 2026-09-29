@@ -90,6 +90,7 @@ def compare_to_baseline(
     tag_id: Optional[int],
     year: int,
     month: int,
+    tolerance_pct: Decimal = STATUS_TOLERANCE_PCT,
 ) -> dict:
     """Compare a month's spend for a tag against the trailing
     BASELINE_MONTHS-month simple average.
@@ -100,6 +101,9 @@ def compare_to_baseline(
 
     pct_change is None when the baseline average is 0 to avoid a
     misleading infinity when the current month is any positive amount.
+
+    status classifies the month as over / under / on_track using
+    tolerance_pct as the steady band, so the UI need not re-derive it.
     """
     if not 1 <= month <= 12:
         raise ValueError("month must be between 1 and 12")
@@ -138,22 +142,33 @@ def compare_to_baseline(
         ],
         "delta": delta,
         "pct_change": pct_change,
+        "status": _status(baseline_avg, delta, pct_change, tolerance_pct),
     }
 
 
-def _status(baseline_avg: Decimal, delta: Decimal, pct_change: Optional[Decimal]) -> str:
+def _status(
+    baseline_avg: Decimal,
+    delta: Decimal,
+    pct_change: Optional[Decimal],
+    tolerance_pct: Decimal = STATUS_TOLERANCE_PCT,
+) -> str:
     """Classify a tag as over / under / on_track relative to its baseline."""
     if baseline_avg == 0:
         # No baseline to compare against; any positive spend is new activity.
         return "over" if delta > 0 else "on_track"
-    if pct_change > STATUS_TOLERANCE_PCT:
+    if pct_change > tolerance_pct:
         return "over"
-    if pct_change < -STATUS_TOLERANCE_PCT:
+    if pct_change < -tolerance_pct:
         return "under"
     return "on_track"
 
 
-def summarize_all_tags(user_id: int, year: int, month: int) -> dict:
+def summarize_all_tags(
+    user_id: int,
+    year: int,
+    month: int,
+    tolerance_pct: Decimal = STATUS_TOLERANCE_PCT,
+) -> dict:
     """Compare every tag's spend for a month against its trailing
     BASELINE_MONTHS-month average, ranked by the biggest increase first.
 
@@ -161,6 +176,9 @@ def summarize_all_tags(user_id: int, year: int, month: int) -> dict:
     omitted (nothing to report). Untagged spend and any orphaned tag ids are
     excluded; only the user's own named tags are ranked. Totals cover exactly
     the tags returned, so they reconcile with the row list.
+
+    status classifies each tag over / under / on_track using tolerance_pct
+    as the steady band.
     """
     if not 1 <= month <= 12:
         raise ValueError("month must be between 1 and 12")
@@ -204,7 +222,7 @@ def summarize_all_tags(user_id: int, year: int, month: int) -> dict:
             "baseline_avg": baseline_q,
             "delta": delta,
             "pct_change": pct_change,
-            "status": _status(baseline_q, delta, pct_change),
+            "status": _status(baseline_q, delta, pct_change, tolerance_pct),
         })
         total_current += current_q
         total_baseline += baseline_q
