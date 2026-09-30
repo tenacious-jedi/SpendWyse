@@ -1,3 +1,4 @@
+import calendar
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -91,6 +92,7 @@ def compare_to_baseline(
     year: int,
     month: int,
     tolerance_pct: Decimal = STATUS_TOLERANCE_PCT,
+    today: Optional[date] = None,
 ) -> dict:
     """Compare a month's spend for a tag against the trailing
     BASELINE_MONTHS-month simple average.
@@ -104,9 +106,15 @@ def compare_to_baseline(
 
     status classifies the month as over / under / on_track using
     tolerance_pct as the steady band, so the UI need not re-derive it.
+
+    projection is a pace estimate for the in-progress current month
+    (None for any complete past month); see _pace_projection.
     """
     if not 1 <= month <= 12:
         raise ValueError("month must be between 1 and 12")
+
+    if today is None:
+        today = date.today()
 
     current = monthly_tag_spend(user_id, tag_id, year, month)
 
@@ -143,6 +151,9 @@ def compare_to_baseline(
         "delta": delta,
         "pct_change": pct_change,
         "status": _status(baseline_avg, delta, pct_change, tolerance_pct),
+        "projection": _pace_projection(
+            current_q, baseline_avg, year, month, today, tolerance_pct
+        ),
     }
 
 
@@ -161,6 +172,55 @@ def _status(
     if pct_change < -tolerance_pct:
         return "under"
     return "on_track"
+
+
+def _pace_projection(
+    current: Decimal,
+    baseline_avg: Decimal,
+    year: int,
+    month: int,
+    today: date,
+    tolerance_pct: Decimal,
+) -> Optional[dict]:
+    """Project month-end spend for the in-progress current month.
+
+    Returns None for any month other than the one `today` falls in: past
+    months are already complete, and future months have no spend to pace.
+
+    The estimate is a simple linear extrapolation of month-to-date spend
+    (current / days_elapsed * days_in_month). It assumes an even daily pace
+    and treats `current` as spend through today, so it is a rough on-pace
+    signal rather than a forecast.
+    """
+    if (year, month) != (today.year, today.month):
+        return None
+
+    days_in_month = calendar.monthrange(year, month)[1]
+    # today.day is always >= 1, so this never divides by zero.
+    days_elapsed = today.day
+    projected = (
+        current / Decimal(days_elapsed) * Decimal(days_in_month)
+    ).quantize(Decimal("0.01"))
+    projected_delta = (projected - baseline_avg).quantize(Decimal("0.01"))
+
+    if baseline_avg == 0:
+        # Same guard as pct_change: no baseline means no meaningful percentage.
+        projected_pct_change: Optional[Decimal] = None
+    else:
+        projected_pct_change = (
+            (projected_delta / baseline_avg) * Decimal("100")
+        ).quantize(Decimal("0.1"))
+
+    return {
+        "days_elapsed": days_elapsed,
+        "days_in_month": days_in_month,
+        "projected": projected,
+        "projected_delta": projected_delta,
+        "projected_pct_change": projected_pct_change,
+        "pace_status": _status(
+            baseline_avg, projected_delta, projected_pct_change, tolerance_pct
+        ),
+    }
 
 
 def summarize_all_tags(

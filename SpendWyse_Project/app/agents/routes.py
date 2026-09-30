@@ -118,6 +118,11 @@ def savings_spend_tag(tag_id: int):
         {**bm, "spend": _decimal_to_str(bm["spend"])}
         for bm in result["baseline_months"]
     ]
+    # projection is None for past months; stringify its money fields otherwise.
+    if result["projection"] is not None:
+        proj = result["projection"]
+        for f in ("projected", "projected_delta", "projected_pct_change"):
+            proj[f] = _decimal_to_str(proj[f])
     result["tag_name"] = tag.name
 
     return jsonify(result), 200
