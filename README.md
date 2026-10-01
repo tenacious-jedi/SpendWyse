@@ -1,5 +1,5 @@
 # SpendWyse
-A personal finance app to manage personal finances and budgeting with filters for checking category spending with category tags [eg. tuition, food, travel etc.] as well as an alerting functionality when spending exceeds the spending rules defined. Built as a Flask REST API application, it that pulls user's bank transactions in via Plaid, auto-categorizes them, tracks spending against per-category caps, raises alerts when caps are approached or breached. Billing and plan tiers run through Stripe. The application layers on agents set up as below.
+A personal finance app to manage personal finances and budgeting with filters for checking category spending with category tags [eg. tuition, food, travel etc.] Built as a Flask REST API application, it pulls user's bank transactions via Plaid, auto-categorizes them, tracks spending against per category spend rules, raises alerts when spend caps are approached or breached. Billing and plan tiers are run through Stripe. The application has also has deterministic agents set up as below.
 
 Agents are set as:
 
