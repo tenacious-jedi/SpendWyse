@@ -1,5 +1,6 @@
 # SpendWyse
-A personal finance app to manage personal finances and budgeting with filters for checking category spending with category tags [eg. tuition, food, travel etc.] as well as an alerting functionality when spending exceeds the spending rules defined.
+A personal finance app to manage personal finances and budgeting with filters for checking category spending with category tags [eg. tuition, food, travel etc.] as well as an alerting functionality when spending exceeds the spending rules defined. Built as a Flask REST API application, it that pulls user's bank transactions in via Plaid, auto-categorizes them, tracks spending against per-category caps, raises alerts when caps are approached or breached. Billing and plan tiers run through Stripe. The application layers on agents set up as below.
+
 Agents are set as:
 
 Subscription Optimizer Agent - Finds hidden user subscriptions which are compounding over time (for eg. annual renewals, free trials that converted, services billed under weird merchant names, duplicate streaming through bundles which need investigation). It essentially investigates, problems like where is a user leaking money on his/her subscriptions?
@@ -8,7 +9,7 @@ Savings Spend Agent - Agent that investigates why the spend went up in a particu
 
 ## Status
 
-Backend API is feature-complete: auth (incl. password reset), Plaid bank linking and transaction sync, user-defined tags and auto-tagging rules, spend caps with warn/alert thresholds, alert delivery via a Kafka event bus, Stripe-billed subscriptions, and reports. Frontend is still pending. 
+Backend API is feature-complete: auth (incl. password reset), Plaid bank linking and transaction sync, user-defined tags and auto-tagging rules, spend caps with warn/alert thresholds, alert delivery via a Kafka event bus, Stripe-billed subscriptions, and reports. Frontend is ongoing. 
 
 ## Running locally
 
