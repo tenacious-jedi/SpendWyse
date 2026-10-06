@@ -66,12 +66,22 @@ def handle_subscription_updated(stripe_sub, config: dict) -> None:
     plan = _plan_from_stripe_price(price_id, config)
 
     stripe_status = stripe_sub["status"]
+    # Map every standard Stripe subscription status explicitly. Without the
+    # non-active ones (unpaid, incomplete_expired, paused), they would fall to
+    # the default and be stored as active, recording a non-paying subscription
+    # as active. trialing is a legitimately active state.
     status_map = {
         "active": SubscriptionStatus.active,
+        "trialing": SubscriptionStatus.active,
         "past_due": SubscriptionStatus.past_due,
+        "unpaid": SubscriptionStatus.past_due,
+        "paused": SubscriptionStatus.past_due,
         "incomplete": SubscriptionStatus.incomplete,
+        "incomplete_expired": SubscriptionStatus.cancelled,
         "canceled": SubscriptionStatus.cancelled,
     }
+    # Default stays active so a new but valid Stripe status does not lock out a
+    # paying user; a true cancellation still arrives via subscription.deleted.
     new_status = status_map.get(stripe_status, SubscriptionStatus.active)
 
     if plan:
