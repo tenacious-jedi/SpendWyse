@@ -55,7 +55,11 @@ def run_audit(user_id: int, lookback_days: int = 365) -> dict:
         s["monthly_cost"] = str(_monthly_cost(s).quantize(Decimal("0.01")))
         enriched.append(s)
 
-    monthly_burn = sum(Decimal(s["monthly_cost"]) for s in enriched)
+    # Decimal start value so an empty audit sums to Decimal("0"), not int 0,
+    # which has no .quantize() and would 500 the whole endpoint.
+    monthly_burn = sum(
+        (Decimal(s["monthly_cost"]) for s in enriched), Decimal("0")
+    )
 
     by_category = _group_by_category(enriched)
 
