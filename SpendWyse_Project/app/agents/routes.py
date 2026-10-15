@@ -152,5 +152,9 @@ def savings_spend_summary():
     result["totals"] = {
         k: _decimal_to_str(v) for k, v in result["totals"].items()
     }
+    # Counts stay ints; _decimal_to_str leaves non-Decimals untouched.
+    result["scorecard"] = {
+        k: _decimal_to_str(v) for k, v in result["scorecard"].items()
+    }
 
     return jsonify(result), 200

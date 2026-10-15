@@ -302,6 +302,41 @@ def summarize_all_tags(
             "baseline_avg": total_baseline,
             "delta": (total_current - total_baseline).quantize(Decimal("0.01")),
         },
+        "scorecard": _scorecard(rows, total_baseline),
+    }
+
+
+def _scorecard(rows: list[dict], total_baseline: Decimal) -> dict:
+    """One-glance headline over the summary rows: how many tags are up/down and
+    the money overspent vs. saved. Derived entirely from rows, so it reconciles
+    with the row list (net_delta equals totals.delta).
+    """
+    # Over-baseline dollars (positive deltas) and under-baseline dollars
+    # (negative deltas, reported as a positive "saved" figure).
+    total_overspent = sum(
+        (r["delta"] for r in rows if r["delta"] > 0), Decimal("0")
+    ).quantize(Decimal("0.01"))
+    total_saved = sum(
+        (-r["delta"] for r in rows if r["delta"] < 0), Decimal("0")
+    ).quantize(Decimal("0.01"))
+    net_delta = (total_overspent - total_saved).quantize(Decimal("0.01"))
+
+    if total_baseline == 0:
+        # No baseline to express the net move as a percentage of.
+        net_pct_change: Optional[Decimal] = None
+    else:
+        net_pct_change = (
+            (net_delta / total_baseline) * Decimal("100")
+        ).quantize(Decimal("0.1"))
+
+    return {
+        "over_count": sum(1 for r in rows if r["status"] == "over"),
+        "on_track_count": sum(1 for r in rows if r["status"] == "on_track"),
+        "under_count": sum(1 for r in rows if r["status"] == "under"),
+        "total_overspent": total_overspent,
+        "total_saved": total_saved,
+        "net_delta": net_delta,
+        "net_pct_change": net_pct_change,
     }
 
 
