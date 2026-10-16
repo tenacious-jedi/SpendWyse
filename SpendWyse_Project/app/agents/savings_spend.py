@@ -93,9 +93,10 @@ def compare_to_baseline(
     month: int,
     tolerance_pct: Decimal = STATUS_TOLERANCE_PCT,
     today: Optional[date] = None,
+    baseline_months: int = BASELINE_MONTHS,
 ) -> dict:
     """Compare a month's spend for a tag against the trailing
-    BASELINE_MONTHS-month simple average.
+    baseline_months-month simple average (defaults to BASELINE_MONTHS).
 
     Months with no spend still count as $0 in the average, so callers
     get an honest "vs. last N months" number even for tags that only
@@ -112,6 +113,8 @@ def compare_to_baseline(
     """
     if not 1 <= month <= 12:
         raise ValueError("month must be between 1 and 12")
+    if baseline_months < 1:
+        raise ValueError("baseline_months must be at least 1")
 
     if today is None:
         today = date.today()
@@ -120,14 +123,14 @@ def compare_to_baseline(
 
     baseline_periods: list[tuple[int, int]] = []
     y, m = year, month
-    for _ in range(BASELINE_MONTHS):
+    for _ in range(baseline_months):
         y, m = _previous_month(y, m)
         baseline_periods.append((y, m))
 
     per_month = [
         monthly_tag_spend(user_id, tag_id, py, pm) for py, pm in baseline_periods
     ]
-    baseline_avg = (sum(per_month, Decimal("0")) / Decimal(BASELINE_MONTHS)).quantize(
+    baseline_avg = (sum(per_month, Decimal("0")) / Decimal(baseline_months)).quantize(
         Decimal("0.01")
     )
     current_q = current.quantize(Decimal("0.01"))
@@ -228,9 +231,11 @@ def summarize_all_tags(
     year: int,
     month: int,
     tolerance_pct: Decimal = STATUS_TOLERANCE_PCT,
+    baseline_months: int = BASELINE_MONTHS,
 ) -> dict:
     """Compare every tag's spend for a month against its trailing
-    BASELINE_MONTHS-month average, ranked by the biggest increase first.
+    baseline_months-month average (defaults to BASELINE_MONTHS), ranked by
+    the biggest increase first.
 
     Tags with no spend in either the target month or the baseline window are
     omitted (nothing to report). Untagged spend and any orphaned tag ids are
@@ -242,6 +247,8 @@ def summarize_all_tags(
     """
     if not 1 <= month <= 12:
         raise ValueError("month must be between 1 and 12")
+    if baseline_months < 1:
+        raise ValueError("baseline_months must be at least 1")
 
     tag_names = {t.id: t.name for t in Tag.query.filter_by(user_id=user_id).all()}
 
@@ -249,7 +256,7 @@ def summarize_all_tags(
 
     baseline_periods: list[tuple[int, int]] = []
     y, m = year, month
-    for _ in range(BASELINE_MONTHS):
+    for _ in range(baseline_months):
         y, m = _previous_month(y, m)
         baseline_periods.append((y, m))
     baseline_maps = [monthly_spend_by_tag(user_id, py, pm) for py, pm in baseline_periods]
@@ -260,7 +267,7 @@ def summarize_all_tags(
     for tag_id, name in tag_names.items():
         current = target_map.get(tag_id, Decimal("0"))
         baseline_vals = [bm.get(tag_id, Decimal("0")) for bm in baseline_maps]
-        baseline_avg = sum(baseline_vals, Decimal("0")) / Decimal(BASELINE_MONTHS)
+        baseline_avg = sum(baseline_vals, Decimal("0")) / Decimal(baseline_months)
 
         current_q = current.quantize(Decimal("0.01"))
         baseline_q = baseline_avg.quantize(Decimal("0.01"))
@@ -295,7 +302,7 @@ def summarize_all_tags(
     return {
         "year": year,
         "month": month,
-        "baseline_months": BASELINE_MONTHS,
+        "baseline_months": baseline_months,
         "tags": rows,
         "totals": {
             "current": total_current,

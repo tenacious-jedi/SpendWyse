@@ -10,6 +10,7 @@ from app.utils.decorators import require_tier
 from . import agents_bp
 from .optimizer import run_audit
 from .savings_spend import (
+    BASELINE_MONTHS,
     STATUS_TOLERANCE_PCT,
     compare_to_baseline,
     summarize_all_tags,
@@ -27,6 +28,9 @@ ALL_TIERS = (
 MIN_LOOKBACK_DAYS = 60
 MAX_LOOKBACK_DAYS = 730
 DEFAULT_LOOKBACK_DAYS = 365
+
+MIN_BASELINE_MONTHS = 1
+MAX_BASELINE_MONTHS = 12
 
 
 def _error(message: str, status: int):
@@ -90,6 +94,24 @@ def _resolve_tolerance(raw):
     return value
 
 
+def _resolve_baseline_months(raw):
+    """Resolve a ?baseline_months= arg to an int.
+
+    Returns the default window when the arg is absent, or None when it is
+    present but not an integer in [MIN_BASELINE_MONTHS, MAX_BASELINE_MONTHS]
+    so the caller can return a 400.
+    """
+    if raw is None:
+        return BASELINE_MONTHS
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if not MIN_BASELINE_MONTHS <= value <= MAX_BASELINE_MONTHS:
+        return None
+    return value
+
+
 @agents_bp.get("/savings-spend/tag/<int:tag_id>")
 @require_tier(*ALL_TIERS)
 def savings_spend_tag(tag_id: int):
@@ -108,7 +130,19 @@ def savings_spend_tag(tag_id: int):
     if tolerance is None:
         return _error("tolerance_pct must be a non-negative number", 400)
 
-    result = compare_to_baseline(user_id, tag_id, year, month, tolerance_pct=tolerance)
+    baseline_months = _resolve_baseline_months(request.args.get("baseline_months"))
+    if baseline_months is None:
+        return _error(
+            f"baseline_months must be an integer between "
+            f"{MIN_BASELINE_MONTHS} and {MAX_BASELINE_MONTHS}",
+            400,
+        )
+
+    result = compare_to_baseline(
+        user_id, tag_id, year, month,
+        tolerance_pct=tolerance,
+        baseline_months=baseline_months,
+    )
 
     result["current"] = _decimal_to_str(result["current"])
     result["baseline_avg"] = _decimal_to_str(result["baseline_avg"])
@@ -142,7 +176,19 @@ def savings_spend_summary():
     if tolerance is None:
         return _error("tolerance_pct must be a non-negative number", 400)
 
-    result = summarize_all_tags(user_id, year, month, tolerance_pct=tolerance)
+    baseline_months = _resolve_baseline_months(request.args.get("baseline_months"))
+    if baseline_months is None:
+        return _error(
+            f"baseline_months must be an integer between "
+            f"{MIN_BASELINE_MONTHS} and {MAX_BASELINE_MONTHS}",
+            400,
+        )
+
+    result = summarize_all_tags(
+        user_id, year, month,
+        tolerance_pct=tolerance,
+        baseline_months=baseline_months,
+    )
 
     money_fields = ("current", "baseline_avg", "delta", "pct_change")
     result["tags"] = [
