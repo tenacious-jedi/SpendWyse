@@ -54,6 +54,35 @@ def monthly_tag_spend(
     return Decimal(total)
 
 
+def tag_spend_through(
+    user_id: int,
+    tag_id: Optional[int],
+    year: int,
+    month: int,
+    through: date,
+) -> Decimal:
+    """Debit spend for a tag from the first of the month through `through`
+    (inclusive). Used for a true month-to-date figure, so a transaction dated
+    later in the month does not inflate a mid-month pace estimate.
+    """
+    period_start, _ = _month_bounds(year, month)
+
+    total = (
+        db.session.query(func.coalesce(func.sum(Transaction.amount), 0))
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.tag_id == tag_id,
+            Transaction.transaction_type == TransactionType.debit,
+            Transaction.is_deleted.is_(False),
+            Transaction.transaction_date >= period_start,
+            Transaction.transaction_date <= through,
+        )
+        .scalar()
+    )
+
+    return Decimal(total)
+
+
 def monthly_spend_by_tag(
     user_id: int,
     year: int,
@@ -141,6 +170,18 @@ def compare_to_baseline(
     else:
         pct_change = ((delta / baseline_avg) * Decimal("100")).quantize(Decimal("0.1"))
 
+    # Pace the projection off spend through today, not the whole-month total,
+    # so a transaction dated later this month doesn't inflate it. Only the
+    # in-progress current month projects; past months are already complete.
+    projection = None
+    if (year, month) == (today.year, today.month):
+        month_to_date = tag_spend_through(
+            user_id, tag_id, year, month, today
+        ).quantize(Decimal("0.01"))
+        projection = _pace_projection(
+            month_to_date, baseline_avg, year, month, today, tolerance_pct
+        )
+
     return {
         "tag_id": tag_id,
         "year": year,
@@ -154,9 +195,7 @@ def compare_to_baseline(
         "delta": delta,
         "pct_change": pct_change,
         "status": _status(baseline_avg, delta, pct_change, tolerance_pct),
-        "projection": _pace_projection(
-            current_q, baseline_avg, year, month, today, tolerance_pct
-        ),
+        "projection": projection,
     }
 
 
@@ -178,7 +217,7 @@ def _status(
 
 
 def _pace_projection(
-    current: Decimal,
+    month_to_date: Decimal,
     baseline_avg: Decimal,
     year: int,
     month: int,
@@ -191,9 +230,9 @@ def _pace_projection(
     months are already complete, and future months have no spend to pace.
 
     The estimate is a simple linear extrapolation of month-to-date spend
-    (current / days_elapsed * days_in_month). It assumes an even daily pace
-    and treats `current` as spend through today, so it is a rough on-pace
-    signal rather than a forecast.
+    (month_to_date / days_elapsed * days_in_month). month_to_date must be
+    spend through today only; it assumes an even daily pace, so it is a rough
+    on-pace signal rather than a forecast.
     """
     if (year, month) != (today.year, today.month):
         return None
@@ -202,7 +241,7 @@ def _pace_projection(
     # today.day is always >= 1, so this never divides by zero.
     days_elapsed = today.day
     projected = (
-        current / Decimal(days_elapsed) * Decimal(days_in_month)
+        month_to_date / Decimal(days_elapsed) * Decimal(days_in_month)
     ).quantize(Decimal("0.01"))
     projected_delta = (projected - baseline_avg).quantize(Decimal("0.01"))
 
