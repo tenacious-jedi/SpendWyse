@@ -46,6 +46,7 @@ def dispatch_pending(batch_size: int = 100) -> int:
 
     published = 0
     for row in rows:
+        correlation_id = (row.envelope or {}).get("correlation_id")
         try:
             publish_envelope(row.topic, row.envelope, key=row.aggregate_key)
         except Exception as exc:
@@ -54,13 +55,13 @@ def dispatch_pending(batch_size: int = 100) -> int:
             row.last_error = str(exc)[:2000]
             if row.attempts >= STUCK_ATTEMPT_THRESHOLD:
                 logger.error(
-                    "outbox row %s stuck after %d attempts: %s",
-                    row.id, row.attempts, exc,
+                    "outbox row %s stuck after %d attempts correlation_id=%s: %s",
+                    row.id, row.attempts, correlation_id, exc,
                 )
             else:
                 logger.warning(
-                    "outbox delivery failed row=%s attempt=%d: %s",
-                    row.id, row.attempts, exc,
+                    "outbox delivery failed row=%s attempt=%d correlation_id=%s: %s",
+                    row.id, row.attempts, correlation_id, exc,
                 )
             continue
 

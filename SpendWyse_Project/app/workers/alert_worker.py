@@ -8,6 +8,7 @@ from kafka import KafkaConsumer
 from app.events.idempotency import already_processed, mark_processed
 from app.events.schema import TRANSACTION_TAGGED
 from app.tags.alert_service import check_caps_and_notify
+from app.utils.correlation import reset_correlation_id, set_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,14 @@ def consume_forever(app: Flask) -> None:
 
             for _tp, messages in batch.items():
                 for msg in messages:
+                    value = msg.value or {}
                     try:
-                        _handle(app, msg.value)
+                        _handle(app, value)
                     except Exception:
                         logger.exception(
-                            "consumer handler failed event_id=%s",
-                            (msg.value or {}).get("event_id"),
+                            "consumer handler failed event_id=%s correlation_id=%s",
+                            value.get("event_id"),
+                            value.get("correlation_id"),
                         )
             # Commit offsets per poll-batch; failed messages are not retried.
             # The Alert UNIQUE constraint makes re-processing safe if we add
@@ -74,18 +77,31 @@ def _handle(app: Flask, envelope: dict) -> None:
         return
 
     event_id = envelope.get("event_id")
+    correlation_id = envelope.get("correlation_id")
     group_id = app.config["KAFKA_CONSUMER_GROUP"]
 
-    with app.app_context():
-        # At-least-once delivery can redeliver an event; skip if we already
-        # handled it. Only events carrying an event_id can be deduped.
-        if event_id and already_processed(group_id, event_id):
-            logger.info("skipping already-processed event_id=%s", event_id)
-            return
+    # Carry the producing request's correlation id for the duration of handling
+    # so this consumer's log lines (and any current_app.logger lines downstream)
+    # tie back to the originating request. Reset after to avoid leaking it to
+    # the next message handled on this thread.
+    token = set_correlation_id(correlation_id) if correlation_id else None
+    try:
+        with app.app_context():
+            # At-least-once delivery can redeliver an event; skip if we already
+            # handled it. Only events carrying an event_id can be deduped.
+            if event_id and already_processed(group_id, event_id):
+                logger.info(
+                    "skipping already-processed event_id=%s correlation_id=%s",
+                    event_id, correlation_id,
+                )
+                return
 
-        check_caps_and_notify(int(user_id), only_tag_id=tag_id)
+            check_caps_and_notify(int(user_id), only_tag_id=tag_id)
 
-        # Record only after successful processing so a crash mid-handling
-        # leaves the event unmarked and safely reprocessable.
-        if event_id:
-            mark_processed(group_id, event_id)
+            # Record only after successful processing so a crash mid-handling
+            # leaves the event unmarked and safely reprocessable.
+            if event_id:
+                mark_processed(group_id, event_id)
+    finally:
+        if token is not None:
+            reset_correlation_id(token)
