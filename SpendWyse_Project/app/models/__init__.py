@@ -11,6 +11,7 @@ from .alert import Alert
 from .password_reset_token import PasswordResetToken
 from .outbox_event import OutboxEvent
 from .processed_event import ProcessedEvent
+from .idempotency_key import IdempotencyKey
 
 __all__ = [
     "User",
@@ -27,4 +28,5 @@ __all__ = [
     "PasswordResetToken",
     "OutboxEvent",
     "ProcessedEvent",
+    "IdempotencyKey",
 ]

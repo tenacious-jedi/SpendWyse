@@ -11,6 +11,7 @@ from app.models.transaction import Transaction, TransactionSource, TransactionTy
 from app.tags.rule_engine import apply_rules
 from app.utils.dates import parse_date
 from app.utils.decorators import require_tier
+from app.utils.idempotency import idempotent
 from . import transactions_bp
 
 ALL_TIERS = (
@@ -115,6 +116,7 @@ def list_transactions():
 
 @transactions_bp.post("/")
 @require_tier(*WRITE_TIERS)
+@idempotent
 def create_transaction():
     user_id = _get_current_user_id()
     data = request.get_json(silent=True) or {}

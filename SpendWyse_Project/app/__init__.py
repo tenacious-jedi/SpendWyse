@@ -88,6 +88,7 @@ def create_app():
         PasswordResetToken,
         OutboxEvent,
         ProcessedEvent,
+        IdempotencyKey,
     )
 
     return app
