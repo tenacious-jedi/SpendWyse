@@ -2,6 +2,7 @@ from flask import request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import stripe
 
+from app.events.idempotency import already_processed, mark_processed
 from app.extensions import db
 from app.models.user import User
 from app.models.subscription import Subscription
@@ -24,6 +25,9 @@ PLAN_TO_PRICE_KEY = {
     "individual_yearly": "STRIPE_PRICE_INDIVIDUAL_YEARLY",
     "team": "STRIPE_PRICE_TEAM",
 }
+
+# Namespace for Stripe events in the processed_events idempotency ledger.
+STRIPE_CONSUMER_GROUP = "stripe-webhook"
 
 
 def _error(message: str, status: int):
@@ -129,7 +133,14 @@ def stripe_webhook():
 
     config = current_app.config
     event_type = event["type"]
+    event_id = event.get("id")
     data = event["data"]["object"]
+
+    # Stripe delivers at least once and retries on any non-2xx, so the same
+    # event id can arrive more than once. Skip anything already applied; the
+    # processed_events unique constraint is the backstop against a race.
+    if event_id and already_processed(STRIPE_CONSUMER_GROUP, event_id):
+        return jsonify({"received": True, "deduped": True}), 200
 
     if event_type == "checkout.session.completed":
         handle_checkout_completed(data, config)
@@ -139,5 +150,14 @@ def stripe_webhook():
         handle_subscription_deleted(data)
     elif event_type == "invoice.payment_failed":
         handle_payment_failed(data)
+    else:
+        # An event type we don't act on; ack without recording so it is neither
+        # retried nor fills the ledger.
+        return jsonify({"received": True, "handled": False}), 200
+
+    # Record only after a handled event is applied, so a crash mid-handling
+    # leaves it reprocessable (the handlers are idempotent set-state updates).
+    if event_id:
+        mark_processed(STRIPE_CONSUMER_GROUP, event_id)
 
     return jsonify({"received": True}), 200
