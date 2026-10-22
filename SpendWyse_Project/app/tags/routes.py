@@ -215,7 +215,11 @@ def create_rule():
         is_active=bool(data.get("is_active", True)),
     )
     db.session.add(rule)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return _error("a rule with this tag, match type, and value already exists", 409)
     return jsonify({"rule": rule.to_dict()}), 201
 
 
@@ -254,7 +258,11 @@ def update_rule(rule_id: int):
     if "is_active" in data:
         rule.is_active = bool(data["is_active"])
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return _error("a rule with this tag, match type, and value already exists", 409)
     return jsonify({"rule": rule.to_dict()}), 200
 
 

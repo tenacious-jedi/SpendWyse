@@ -12,6 +12,15 @@ class RuleMatchType(enum.Enum):
 
 class TagRule(db.Model):
     __tablename__ = "tag_rules"
+    # The same rule (same target tag, match type, and value) for a user is a
+    # duplicate; the constraint prevents a double-submit creating two rules
+    # that then both match the same transactions.
+    __table_args__ = (
+        db.UniqueConstraint(
+            "user_id", "tag_id", "match_type", "match_value",
+            name="uq_tag_rule_dedup",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(
