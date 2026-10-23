@@ -1,7 +1,9 @@
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from sqlalchemy import text
 
 from app.events.outbox import enqueue
 from app.events.schema import TRANSACTION_TAGGED
@@ -11,13 +13,69 @@ from app.models.transaction import Transaction, TransactionSource, TransactionTy
 from app.tags.rule_engine import apply_rules
 from .plaid_client import get_plaid_client
 
+logger = logging.getLogger(__name__)
+
+# Namespace for plaid-sync advisory locks, so the item-id keys can't collide
+# with any other advisory-lock use. Both args to pg_*_advisory_lock are int4.
+_SYNC_LOCK_NAMESPACE = 4271
+
+
+def _acquire_sync_lock(item_id: int) -> bool:
+    """Take a non-blocking, session-level advisory lock for this item's sync.
+
+    Session-level (not xact-level) so it survives the per-page commits below.
+    Returns True if acquired, False if another sync already holds it. On a
+    backend without advisory locks (e.g. sqlite in tests) locking is a no-op.
+    """
+    if db.session.get_bind().dialect.name != "postgresql":
+        return True
+    got = db.session.execute(
+        text("SELECT pg_try_advisory_lock(:ns, :key)"),
+        {"ns": _SYNC_LOCK_NAMESPACE, "key": item_id},
+    ).scalar()
+    return bool(got)
+
+
+def _release_sync_lock(item_id: int) -> None:
+    if db.session.get_bind().dialect.name != "postgresql":
+        return
+    try:
+        # A failed sync may have left the session mid-transaction; clear it so
+        # the unlock runs cleanly. Session-level locks outlive the rollback.
+        db.session.rollback()
+        db.session.execute(
+            text("SELECT pg_advisory_unlock(:ns, :key)"),
+            {"ns": _SYNC_LOCK_NAMESPACE, "key": item_id},
+        )
+        db.session.commit()
+    except Exception:
+        # Never mask the original outcome; the lock also frees when the
+        # connection is eventually recycled.
+        logger.exception("failed to release plaid sync lock for item %s", item_id)
+
 
 def sync_item(plaid_item: PlaidItem) -> dict:
     """Pull added/modified/removed transactions for one PlaidItem and upsert
     them, committing the cursor per page so a crash mid-sync resumes cleanly.
 
-    Returns a small summary of what changed.
+    A session-level advisory lock serializes syncs for one item: a concurrent
+    sync (e.g. a manual /sync racing a webhook-triggered one) that can't get
+    the lock skips rather than racing to insert the same plaid_transaction_id
+    and hitting the UNIQUE constraint. Returns a small summary of what changed.
     """
+    if not _acquire_sync_lock(plaid_item.id):
+        logger.info(
+            "plaid sync already in progress for item %s; skipping", plaid_item.id
+        )
+        return {"plaid_item_id": plaid_item.id, "skipped": "sync_in_progress"}
+
+    try:
+        return _run_sync(plaid_item)
+    finally:
+        _release_sync_lock(plaid_item.id)
+
+
+def _run_sync(plaid_item: PlaidItem) -> dict:
     client = get_plaid_client()
     cursor = plaid_item.cursor or ""
 
