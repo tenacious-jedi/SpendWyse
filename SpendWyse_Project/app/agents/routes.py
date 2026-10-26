@@ -191,10 +191,18 @@ def savings_spend_summary():
     )
 
     money_fields = ("current", "baseline_avg", "delta", "pct_change")
-    result["tags"] = [
-        {**row, **{f: _decimal_to_str(row[f]) for f in money_fields}}
-        for row in result["tags"]
-    ]
+    projection_money = ("projected", "projected_delta", "projected_pct_change")
+    serialized_tags = []
+    for row in result["tags"]:
+        row = {**row, **{f: _decimal_to_str(row[f]) for f in money_fields}}
+        # projection is None for past months; stringify its money fields otherwise.
+        if row.get("projection") is not None:
+            proj = dict(row["projection"])
+            for f in projection_money:
+                proj[f] = _decimal_to_str(proj[f])
+            row["projection"] = proj
+        serialized_tags.append(row)
+    result["tags"] = serialized_tags
     result["totals"] = {
         k: _decimal_to_str(v) for k, v in result["totals"].items()
     }

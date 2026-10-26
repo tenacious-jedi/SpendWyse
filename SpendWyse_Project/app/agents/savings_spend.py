@@ -87,14 +87,22 @@ def monthly_spend_by_tag(
     user_id: int,
     year: int,
     month: int,
+    through: Optional[date] = None,
 ) -> dict[Optional[int], Decimal]:
     """Total debit spend for a month grouped by tag_id, in a single query.
 
     Returned as {tag_id: total}; untagged spend lands under the None key.
     Only tags with spend in the month appear, so callers should treat a
     missing tag_id as $0.
+
+    With `through`, the window ends at that date (inclusive) instead of the
+    month end — a month-to-date total for pace estimates.
     """
     period_start, period_end = _month_bounds(year, month)
+    if through is not None:
+        upper_bound = Transaction.transaction_date <= through
+    else:
+        upper_bound = Transaction.transaction_date < period_end
 
     rows = (
         db.session.query(
@@ -106,7 +114,7 @@ def monthly_spend_by_tag(
             Transaction.transaction_type == TransactionType.debit,
             Transaction.is_deleted.is_(False),
             Transaction.transaction_date >= period_start,
-            Transaction.transaction_date < period_end,
+            upper_bound,
         )
         .group_by(Transaction.tag_id)
         .all()
@@ -271,6 +279,7 @@ def summarize_all_tags(
     month: int,
     tolerance_pct: Decimal = STATUS_TOLERANCE_PCT,
     baseline_months: int = BASELINE_MONTHS,
+    today: Optional[date] = None,
 ) -> dict:
     """Compare every tag's spend for a month against its trailing
     baseline_months-month average (defaults to BASELINE_MONTHS), ranked by
@@ -282,16 +291,29 @@ def summarize_all_tags(
     the tags returned, so they reconcile with the row list.
 
     status classifies each tag over / under / on_track using tolerance_pct
-    as the steady band.
+    as the steady band. For the in-progress current month each row also carries
+    a projection (see _pace_projection); it is None for any complete past month.
     """
     if not 1 <= month <= 12:
         raise ValueError("month must be between 1 and 12")
     if baseline_months < 1:
         raise ValueError("baseline_months must be at least 1")
 
+    if today is None:
+        today = date.today()
+
     tag_names = {t.id: t.name for t in Tag.query.filter_by(user_id=user_id).all()}
 
     target_map = monthly_spend_by_tag(user_id, year, month)
+
+    # Only the in-progress current month projects; fetch month-to-date spend
+    # (through today) per tag in one grouped query to pace each row.
+    is_current_month = (year, month) == (today.year, today.month)
+    mtd_map = (
+        monthly_spend_by_tag(user_id, year, month, through=today)
+        if is_current_month
+        else {}
+    )
 
     baseline_periods: list[tuple[int, int]] = []
     y, m = year, month
@@ -321,6 +343,13 @@ def summarize_all_tags(
         else:
             pct_change = ((delta / baseline_q) * Decimal("100")).quantize(Decimal("0.1"))
 
+        projection = None
+        if is_current_month:
+            mtd = mtd_map.get(tag_id, Decimal("0")).quantize(Decimal("0.01"))
+            projection = _pace_projection(
+                mtd, baseline_q, year, month, today, tolerance_pct
+            )
+
         rows.append({
             "tag_id": tag_id,
             "tag_name": name,
@@ -329,6 +358,7 @@ def summarize_all_tags(
             "delta": delta,
             "pct_change": pct_change,
             "status": _status(baseline_q, delta, pct_change, tolerance_pct),
+            "projection": projection,
         })
         total_current += current_q
         total_baseline += baseline_q
