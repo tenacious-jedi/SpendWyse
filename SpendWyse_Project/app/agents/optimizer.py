@@ -7,7 +7,7 @@ from sqlalchemy import func
 
 from app.extensions import db
 from app.models.transaction import Transaction, TransactionType
-from app.recurring.detector import detect_recurring
+from app.recurring.detector import detect_recurring, monthly_equivalent
 from .categorizer import categorize
 
 
@@ -103,15 +103,7 @@ def run_audit(user_id: int, lookback_days: int = 365) -> dict:
 
 
 def _monthly_cost(sub: dict) -> Decimal:
-    amount = Decimal(sub["avg_amount"])
-    cadence = sub["cadence"]
-    if cadence == "weekly":
-        return amount * Decimal("4.33")
-    if cadence == "monthly":
-        return amount
-    if cadence == "yearly":
-        return amount / Decimal("12")
-    return Decimal("0")
+    return monthly_equivalent(Decimal(sub["avg_amount"]), sub["cadence"])
 
 
 def _group_by_category(subs: list[dict]) -> dict[Optional[str], list[dict]]:
@@ -283,7 +275,7 @@ def _find_price_increases(subs: list[dict]) -> list[dict]:
         pct = ((ratio - Decimal("1")) * Decimal("100")).quantize(Decimal("0.1"))
         # Monthly-equivalent of the per-cadence delta, so this can be
         # compared and summed against the other issue savings figures.
-        savings = _monthly_from_amount(high - low, s["cadence"]).quantize(Decimal("0.01"))
+        savings = monthly_equivalent(high - low, s["cadence"]).quantize(Decimal("0.01"))
         issues.append({
             "type": "price_increased",
             "merchant": s["merchant"],
@@ -341,13 +333,3 @@ def _approx_months_running(cadence: str, charge_count: int) -> int:
     if cadence == "yearly":
         return charge_count * 12
     return 0
-
-
-def _monthly_from_amount(amount: Decimal, cadence: str) -> Decimal:
-    if cadence == "weekly":
-        return amount * Decimal("4.33")
-    if cadence == "monthly":
-        return amount
-    if cadence == "yearly":
-        return amount / Decimal("12")
-    return Decimal("0")

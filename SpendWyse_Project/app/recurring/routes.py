@@ -1,9 +1,11 @@
+from decimal import Decimal
+
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
 from app.utils.decorators import require_tier
 from . import recurring_bp
-from .detector import LOOKBACK_DAYS, detect_recurring
+from .detector import LOOKBACK_DAYS, detect_recurring, monthly_equivalent
 
 
 ALL_TIERS = (
@@ -40,21 +42,15 @@ def list_subscriptions():
         )
 
     subs = detect_recurring(_uid(), lookback_days=lookback)
-    monthly_total = sum(_monthly_burn(s) for s in subs)
+    # Decimal start value so an empty list sums to Decimal("0"), keeping the
+    # math exact rather than dropping back to float.
+    monthly_total = sum(
+        (monthly_equivalent(Decimal(s["avg_amount"]), s["cadence"]) for s in subs),
+        Decimal("0"),
+    )
 
     return jsonify({
         "subscriptions": subs,
-        "monthly_burn": str(round(monthly_total, 2)),
+        "monthly_burn": str(monthly_total.quantize(Decimal("0.01"))),
         "lookback_days": lookback,
     }), 200
-
-
-def _monthly_burn(sub: dict) -> float:
-    amount = float(sub["avg_amount"])
-    if sub["cadence"] == "weekly":
-        return amount * 4.33
-    if sub["cadence"] == "monthly":
-        return amount
-    if sub["cadence"] == "yearly":
-        return amount / 12.0
-    return 0.0

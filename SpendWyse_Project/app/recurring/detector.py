@@ -21,6 +21,22 @@ CADENCES = [
 ]
 
 
+def monthly_equivalent(amount: Decimal, cadence: str) -> Decimal:
+    """Convert a per-cadence charge to its monthly-equivalent cost.
+
+    The single source of truth for the cadence conversion; 4.33 is the
+    average number of weeks in a month (52 / 12). Unknown cadences return
+    Decimal("0"), matching the behavior the callers relied on.
+    """
+    if cadence == "weekly":
+        return amount * Decimal("4.33")
+    if cadence == "monthly":
+        return amount
+    if cadence == "yearly":
+        return amount / Decimal("12")
+    return Decimal("0")
+
+
 def detect_recurring(user_id: int, lookback_days: int = LOOKBACK_DAYS) -> list[dict]:
     """Return a list of likely recurring charges for the user.
 
